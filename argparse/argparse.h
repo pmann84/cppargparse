@@ -1,6 +1,7 @@
 #ifndef __ARGPARSE_H__
 #define __ARGPARSE_H__
 
+#include <any>
 #include <string>
 #include <utility>
 #include <vector>
@@ -13,6 +14,7 @@
 
 // Arguments must maintain the order that they are added in
 // Display optional args first then positional
+// Optional arguments can be input in any order around positional arguments, but positional args must be in order relative to themselves
 
 namespace argparse
 {
@@ -80,10 +82,10 @@ namespace argparse
 
     size_t get_max_string_size(const std::vector<std::string>& strs)
     {
-        return std::max_element(strs.begin(), strs.end(), std::greater<std::string>())->size();
+        return get_string_with_max_size(strs).size();
     }
 
-    class invalid_argument_exception :public std::exception
+    class invalid_argument_exception : public std::exception
     {
     public:
         invalid_argument_exception(const std::string& invalid_arg_name, const std::string& usage_str) : m_usage_str(usage_str), m_invalid_arg_name(invalid_arg_name) {}
@@ -100,9 +102,27 @@ namespace argparse
         std::string m_invalid_arg_name;
     };
 
+    class unknown_argument_exception : public std::exception
+    {
+    public:
+        explicit unknown_argument_exception(const std::string& unknown_argument_name) : m_unknown_argument_name(unknown_argument_name)
+        {
+        }
+
+        virtual char const* what() const noexcept
+        {
+            std::stringstream error_msg;
+            error_msg << "Error: Attempt to Access Unknown Argument: " << m_unknown_argument_name << std::endl;
+            return error_msg.str().c_str();
+        }
+    private:
+        std::string m_unknown_argument_name;
+    };
+
+
     class argument {
     public:
-        argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(0)
+        argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1)
         {
             std::string longest_arg = get_string_with_max_size(names);
             m_destination = longest_arg;
@@ -110,15 +130,29 @@ namespace argparse
             {
                 m_destination = string_utils::trim_left(longest_arg, '-');
             }
+
         }
 
         explicit argument(const std::string& name) : argument(std::vector<std::string>(1, name))
         {
         }
 
-        // The number of command-line arguments that should be consumed.
-        argument &nargs(size_t n)
+        template<typename ArgT>
+        void value(ArgT value)
         {
+            m_value = value;
+        }
+
+        template <typename ArgT>
+        ArgT value()
+        {
+            return std::any_cast<ArgT>(m_value);
+        }
+
+        // The number of command-line arguments that should be consumed.
+        argument &num_args(size_t n)
+        {
+            // TODO: Validate - defaults to 1 but can be set to zero for a true flag
             m_nargs = n;
             return *this;
         }
@@ -146,6 +180,11 @@ namespace argparse
             return *this;
         }
 
+        std::string dest() const
+        {
+            return m_destination;
+        }
+
         static bool is_optional(const std::string& argument_name)
         {
             return string_utils::starts_with(argument_name, std::string("-"));
@@ -164,6 +203,7 @@ namespace argparse
         }
 
     private:
+        std::any m_value;
         std::string m_destination;
         std::vector<std::string> m_flags;
         std::string m_help;
@@ -197,7 +237,7 @@ namespace argparse
             add_argument({"-h", "--help"}).help("Show this help message and exit.");
         }
 
-        argument_parser &description(const std::string &description)
+        argument_parser& description(const std::string &description)
         {
             m_description = description;
             return *this;
@@ -235,17 +275,83 @@ namespace argparse
             return add_argument(arg);
         }
 
+        template <typename ArgT>
+        ArgT get(std::string name)
+        {
+            std::cout << "Getting Argument: " << name << std::endl;
+            auto pos_it = std::find_if(
+                                m_positional_arguments.begin(),
+                                m_positional_arguments.end(),
+                                [&name](const argument& arg) -> bool
+                                {
+                                    return arg.dest() == name;
+                                }
+                            );
+            auto opt_it = std::find_if(
+                                m_optional_arguments.begin(),
+                                m_optional_arguments.end(),
+                                [&name](const argument& arg) -> bool
+                                {
+                                    return arg.dest() == name;
+                                }
+                            );
+
+            if (pos_it != m_positional_arguments.end())
+            {
+                std::cout << "Found Positional Argument: " << pos_it->dest() << std::endl;
+                return pos_it->value<ArgT>();
+            }
+
+            if (opt_it != m_optional_arguments.end())
+            {
+                std::cout << "Found Optional Argument: " << opt_it->dest() << std::endl;
+                return opt_it->value<ArgT>();
+            }
+            throw unknown_argument_exception(name);
+        }
+
         void parse_args(int argc, char *argv[])
         {
             std::vector<std::string> command_line_args;
             std::copy(argv, argv + argc, std::back_inserter(command_line_args));
+            // Iterate over the given arguments
+            size_t pos_index = 0;
+            for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
+            {
+//                // Check if its positional or not
+                if (argument::is_optional(*it))
+                {
+                    std::cout << "Optional Argument Detected: " << *it << std::endl;
+//                    // Search optional args for the name, increment the iterator and grab the value
+//                    // if the next value is another optional flag (i.e. no value has been specified)
+//                    // and nargs is > 0 then ERROR
+                }
+                else
+                {
+                    std::cout << "Positional Argument Detected: " << *it << std::endl;
+                    // Verify we have enough positional arguments
+                    if (pos_index >= m_positional_arguments.size())
+                    {
+                        throw invalid_argument_exception("Too many positional arguments.", "TODO: Usage String!");
+                    }
+                    // Grab the value and stick it in the next positional argument
+                    m_positional_arguments[pos_index].value(*it);
+                    pos_index++;
+                }
+//                std::cout << *it << std::endl;
+            }
+
+
             // Iterate over the arguments in order and process them as such, if we hit an error
             // then we throw with error message
-            for (auto& arg : command_line_args)
-            {
-                // Search arguments and
-                std::cout << arg << std::endl;
-            }
+
+
+//            for (size_t i = 0; i < command_line_args.size(); ++i)
+//            {
+//                std::cout << command_line_args[i] << std::endl;
+//            }
+
+
 
 //            for (auto& arg_received : command_line_args)
 //            {
@@ -292,6 +398,7 @@ namespace argparse
             m_positional_arguments.push_back(arg);
             return m_positional_arguments.back();
         }
+
 //        std::string get_parser_details() const
 //        {
 //            std::stringstream ss;

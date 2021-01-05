@@ -2,6 +2,7 @@
 
 
 # Folders
-debug
-release
+*debug*
+*release*
 .idea
+.vs
