@@ -46,4 +46,4 @@ jobs:
       working-directory: ${{runner.workspace}}/build
       shell: bash
       # Execute tests defined by the CMake configuration.  
-      run: ./tests/test_argparse.exe
+      run: ./tests/release/test_argparse.exe
