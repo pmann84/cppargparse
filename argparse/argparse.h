@@ -77,7 +77,7 @@ namespace argparse
 
     std::string get_string_with_max_size(const std::vector<std::string>& strs)
     {
-        return *std::max_element(strs.begin(), strs.end(), std::greater<std::string>());
+        return *std::max_element(strs.begin(), strs.end(), std::less<std::string>());
     }
 
     size_t get_max_string_size(const std::vector<std::string>& strs)
@@ -120,11 +120,12 @@ namespace argparse
     };
 
 
-    class argument {
+    class argument
+    {
     public:
         argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1)
         {
-            std::string longest_arg = get_string_with_max_size(names);
+            std::string longest_arg = get_string_with_max_size(m_flags);
             m_destination = longest_arg;
             if (is_optional(longest_arg))
             {
@@ -157,9 +158,15 @@ namespace argparse
             return *this;
         }
 
+        size_t num_args() const
+        {
+            return m_nargs;
+        }
+
         // The value produced if the argument is absent from the command line and if it is absent from the namespace object.
         argument& default_value()
         {
+            m_value = false;
             return *this;
         }
 
@@ -202,7 +209,20 @@ namespace argparse
             return string_utils::join(m_flags, std::string(", "));
         }
 
+        bool matches_arg_name(const std::string& arg_name) const
+        {
+            return std::find_if(
+                    m_flags.begin(),
+                    m_flags.end(),
+                    [&arg_name](const std::string& flag)
+                    {
+                        return flag == arg_name;
+                    }
+                ) != m_flags.end();
+        }
+
     private:
+        // TODO: this needs to be a vector of values so we can store num_args
         std::any m_value;
         std::string m_destination;
         std::vector<std::string> m_flags;
@@ -234,7 +254,9 @@ namespace argparse
                 : m_program_name(std::move(program_name))
                 , m_description(std::move(description))
         {
-            add_argument({"-h", "--help"}).help("Show this help message and exit.");
+            add_argument({"-h", "--help"})
+                .num_args(0)
+                .help("Show this help message and exit.");
         }
 
         argument_parser& description(const std::string &description)
@@ -322,9 +344,51 @@ namespace argparse
                 if (argument::is_optional(*it))
                 {
                     std::cout << "Optional Argument Detected: " << *it << std::endl;
-//                    // Search optional args for the name, increment the iterator and grab the value
-//                    // if the next value is another optional flag (i.e. no value has been specified)
-//                    // and nargs is > 0 then ERROR
+                    // Search optional args for the name, increment the iterator and grab the value
+                    // if the next value is another optional flag (i.e. no value has been specified)
+                    // and nargs is > 0 then ERROR
+                    auto arg_it = std::find_if(
+                            m_optional_arguments.begin(),
+                            m_optional_arguments.end(),
+                            [&it](const argument& arg)
+                            {
+                                std::cout << "Comparing " << arg.get_name_string() << " against " << *it << std::endl;
+                                return arg.matches_arg_name(*it);
+                            }
+                        );
+                    if (arg_it == m_optional_arguments.end())
+                    {
+                        throw invalid_argument_exception(*it, "Invalid Optional Argument");
+                    }
+                    else
+                    {
+                        std::cout << "Matched argument " << *it << " with optional argument " << arg_it->get_name_string() << std::endl;
+                        // Get the number of args meant to be consumed
+                        if (arg_it->num_args() > 0)
+                        {
+                            // Get the next num_arg arguments
+                            auto count = arg_it->num_args();
+                            while (count != 0)
+                            {
+                                // Get the next arg
+                                it++;
+                                // check each is not another flag
+                                if (argument::is_optional(*it))
+                                {
+                                    throw invalid_argument_exception(*it, "Not expecting optional argument!");
+                                }
+                                else
+                                {
+                                    arg_it->value(*it);
+                                }
+                                --count;
+                            }
+                        }
+                        else
+                        {
+                            arg_it->value(true);
+                        }
+                    }
                 }
                 else
                 {
