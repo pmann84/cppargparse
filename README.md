@@ -25,4 +25,5 @@ cmake --build . --config Debug
 
 ## Functionality
 
-
+## Contributions
+This is free to use in whatever project you like, however, if you find any issues or make any improvements please do consider pushing them back to this repository so others (including myself :D) can take advantage of them.
