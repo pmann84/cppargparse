@@ -82,6 +82,15 @@ TEST(BasicTests, TestPositionalAndOptionalArgumentEnteredSuccessfullyOptionalArg
     ASSERT_EQ(parser.get<std::string>("foo"), argv[2]);
 }
 
+TEST(BasicTests, TestMixedNameArgumentsThrowError)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    ASSERT_ANY_THROW(parser.add_argument({"foo", "-f"}));
+}
+
+
+
+/// Temporary test
 TEST(BasicTests, Sandbox)
 {
     auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");

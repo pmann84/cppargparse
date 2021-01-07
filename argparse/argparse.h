@@ -14,6 +14,7 @@
 
 // TODO: Must support negative numbers as arguments! This isnt supported currently! :S
 // TODO: Must add proper support for multi args options, currently the values are overwritten everytime!
+// TODO: Nested parsers - make sure you sort out help strings for this
 // Arguments must maintain the order that they are added in
 // Display optional args first then positional
 // Optional arguments can be input in any order around positional arguments, but positional args must be in order relative to themselves
@@ -188,14 +189,47 @@ namespace argparse
             std::string m_usage_str;
         };
     }
+
+    namespace utils
+    {
+        bool is_optional(const std::string& argument_name)
+        {
+            return string_utils::starts_with(argument_name, std::string("-"));
+        }
+
+        bool validate_optional(const std::vector<std::string>& argument_names)
+        {
+            bool positional = false;
+            bool optional = false;
+            for (auto& name : argument_names)
+            {
+                if (is_optional(name))
+                {
+                    optional = true;
+                } else
+                {
+                    positional = true;
+                }
+            }
+            if (optional && positional) return false;
+            return true;
+        }
+    }
+
     class argument
     {
     public:
         argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1)
         {
+            // Validate that if one name starts with - then all must!
+            if (!utils::validate_optional(m_flags))
+            {
+               throw std::runtime_error("Error: Invalid option string: all names must start with a character '-' or none of them.");
+            }
+            // Use the longest name as the destination
             std::string longest_arg = string_utils::get_string_with_max_size(m_flags);
             m_destination = longest_arg;
-            if (is_optional(longest_arg))
+            if (utils::is_optional(longest_arg))
             {
                 m_destination = string_utils::trim_left(longest_arg, '-');
             }
@@ -260,14 +294,9 @@ namespace argparse
             return m_destination;
         }
 
-        static bool is_optional(const std::string& argument_name)
-        {
-            return string_utils::starts_with(argument_name, std::string("-"));
-        }
-
         bool is_optional() const
         {
-            return is_optional(m_flags[0]);
+            return utils::is_optional(m_flags[0]);
         }
 
 //        friend std::ostream &operator<<(std::ostream &os, const argument &arg);
@@ -429,14 +458,13 @@ namespace argparse
             for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
             {
                 // Check if its positional or not
-                if (argument::is_optional(*it))
+                if (utils::is_optional(*it))
                 {
                     std::cout << "Optional Argument Detected: " << *it << std::endl;
                     // If asked for help then print usage and help and exit
                     if (get_help_argument().matches_arg_name(*it))
                     {
-                        // TODO: Return parser help as well as usage
-                        std::cout << get_usage_string();
+                        std::cout << get_usage_and_help_string();
                         std::exit(0);
                     }
                     // Search optional args for the name, increment the iterator and grab the value
@@ -454,7 +482,7 @@ namespace argparse
                     if (arg_it == m_optional_arguments.end())
                     {
                         std::cout << "Error: Unknown optional argument. " << *it << std::endl;
-                        std::cout << get_usage_string() << std::endl;
+                        std::cout << get_usage_and_help_string() << std::endl;
                         std::exit(1);
                         // throw exception::invalid_argument(*it, "Invalid Optional Argument", get_usage_string());
                     }
@@ -472,10 +500,10 @@ namespace argparse
                                 // Get the next arg
                                 it++;
                                 // check each is not another flag or we havent hit the end
-                                if (it == command_line_args.end() || argument::is_optional(*it))
+                                if (it == command_line_args.end() || utils::is_optional(*it))
                                 {
                                     std::cout << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more inputs (" << arg_it->num_args() << " total)." << std::endl;
-                                    std::cout << get_usage_string() << std::endl;
+                                    std::cout << get_usage_and_help_string() << std::endl;
                                     std::exit(1);
 //                                  throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
                                 }
@@ -499,7 +527,7 @@ namespace argparse
                     if (pos_index >= m_positional_arguments.size())
                     {
                         std::cout << "Error: Too many positional arguments." << std::endl;
-                        std::cout << get_usage_string() << std::endl;
+                        std::cout << get_usage_and_help_string() << std::endl;
                         std::exit(1);
                         //throw exception::invalid_argument("Too many positional arguments.", get_usage_string());
                     }
@@ -510,10 +538,10 @@ namespace argparse
                     while (count != 0)
                     {
                         // check each is not another flag or we've reached the end (not enough args)
-                        if (it == command_line_args.end() || argument::is_optional(*it))
+                        if (it == command_line_args.end() || utils::is_optional(*it))
                         {
                             std::cout << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more inputs (" << pos_arg.num_args() << " total)." << std::endl;
-                            std::cout << get_usage_string() << std::endl;
+                            std::cout << get_usage_and_help_string() << std::endl;
                             std::exit(1);
                             // throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
                         }
@@ -549,7 +577,29 @@ namespace argparse
             }
         }
 
-        std::string get_usage_string()
+        void print_help() const
+        {
+
+        }
+
+    private:
+        argument& add_argument(argument arg)
+        {
+            if (arg.is_optional())
+            {
+                m_optional_arguments.push_back(arg);
+                return m_optional_arguments.back();
+            }
+            m_positional_arguments.push_back(arg);
+            return m_positional_arguments.back();
+        }
+
+        argument& get_help_argument()
+        {
+            return m_optional_arguments[0];
+        }
+
+        std::string get_usage_string() const
         {
             // Optional arguments are surrounded by [], with the name being the longest flag available
             // Positional arguments are printed as the dest name
@@ -580,80 +630,46 @@ namespace argparse
             return ss.str();
         }
 
-        void print_help() const
+        std::string get_help_string() const
         {
-
-        }
-
-
-        // Iterate over the arguments in order and process them as such, if we hit an error
-        // then we throw with error message
-
-
-//            for (size_t i = 0; i < command_line_args.size(); ++i)
-//            {
-//                std::cout << command_line_args[i] << std::endl;
-//            }
-
-
-
-//            for (auto& arg_received : command_line_args)
-//            {
-//                if (std::find(m_positional_arguments.begin(), m_positional_arguments.end(), arg_received) != m_positional_arguments.end())
-//                {
-//
-//                }
-//            }
-        // TODO: Only do this if help is passed in or invalid argument is input
-//            if (true)
-//            {
-//                print_args();
-//            }
-
-    private:
-        argument& add_argument(argument arg)
-        {
-            if (arg.is_optional())
+            // TODO: Space the output of this function better
+            std::stringstream ss;
+            ss << std::endl;
+            if (!m_description.empty())
             {
-                m_optional_arguments.push_back(arg);
-                return m_optional_arguments.back();
+                ss << m_description << std::endl << std::endl;
             }
-            m_positional_arguments.push_back(arg);
-            return m_positional_arguments.back();
+
+            if (m_positional_arguments.size() > 0)
+            {
+                ss << "Positional Arguments: " << std::endl;
+                for (auto& pos : m_positional_arguments)
+                {
+                    ss << pos.get_name_string() << ": " << pos.help() << std::endl;
+                }
+                ss << std::endl;
+            }
+
+            if (m_optional_arguments.size() > 0)
+            {
+                ss << "Optional Arguments: " << std::endl;
+                for (auto& opt : m_optional_arguments)
+                {
+                    ss << opt.get_name_string() << ": " << opt.help() << std::endl;
+                    // TODO: Add generation of default info, specify this in brackets after the above info
+                }
+                ss << std::endl;
+            }
+            return ss.str();
         }
 
-        argument& get_help_argument()
+        std::string get_usage_and_help_string() const
         {
-            return m_optional_arguments[0];
+            std::stringstream ss;
+            ss << get_usage_string() << std::endl;
+            ss << get_help_string() << std::endl;
+            return ss.str();
         }
-
-//        std::string get_parser_details() const
-//        {
-//            std::stringstream ss;
-//            // Print name of parser
-//            ss << m_program_name << " - " << m_description << std::endl;
-//            // Print out arguments
-//            std::vector<std::string> arg_names;
-//            std::vector<std::string> arg_descs;
-//            for (auto& arg : m_positional_arguments)
-//            {
-//                arg_names.push_back(arg.get_name_string());
-//                arg_descs.push_back(arg.description());
-//            }
-//
-//            size_t max_arg_size =
-//                    std::max_element(arg_names.begin(), arg_names.end(), std::greater<std::string>())->size() + 1;
-//            size_t description_padding = 50;
-//            size_t max_desc_size =
-//                    std::max_element(arg_descs.begin(), arg_descs.end(), std::greater<std::string>())->size() +
-//                    description_padding;
-//            for (auto& arg : m_positional_arguments)
-//            {
-//                ss << std::setw(max_arg_size) << arg.get_name_string() << ":" << std::setw(max_desc_size)
-//                          << arg.description() << std::endl;
-//            }
-//            return ss.str();
-//        }
 
     private:
     std::string m_program_name;
