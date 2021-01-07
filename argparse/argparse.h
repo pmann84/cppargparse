@@ -378,6 +378,7 @@ namespace argparse
 
         bool is_set() const noexcept
         {
+            if (m_values.size() < m_nargs) return false;
             bool is_set = true;
             for (auto& val : m_values)
             {
@@ -544,10 +545,9 @@ namespace argparse
                     );
                     if (arg_it == m_optional_arguments.end())
                     {
-                        std::cout << "Error: Unknown optional argument. " << *it << std::endl;
-                        std::cout << get_usage_and_help_string() << std::endl;
-                        std::exit(1);
-                        // throw exception::invalid_argument(*it, "Invalid Optional Argument", get_usage_string());
+                        std::stringstream ss;
+                        ss << "Error: Unknown optional argument. " << *it << std::endl;
+                        print_error_usage_and_exit(ss.str());
                     }
                     else
                     {
@@ -565,10 +565,9 @@ namespace argparse
                                 // check each is not another flag or we havent hit the end
                                 if (it == command_line_args.end() || utils::is_optional(*it))
                                 {
-                                    std::cout << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more inputs (" << arg_it->num_args() << " total)." << std::endl;
-                                    std::cout << get_usage_and_help_string() << std::endl;
-                                    std::exit(1);
-//                                  throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
+                                    std::stringstream ss;
+                                    ss << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more input(s) (" << arg_it->num_args() << " total)." << std::endl;
+                                    print_error_usage_and_exit(ss.str());
                                 }
                                 else
                                 {
@@ -589,10 +588,9 @@ namespace argparse
                     // Verify we have enough positional arguments
                     if (pos_index >= m_positional_arguments.size())
                     {
-                        std::cout << "Error: Too many positional arguments." << std::endl;
-                        std::cout << get_usage_and_help_string() << std::endl;
-                        std::exit(1);
-                        //throw exception::invalid_argument("Too many positional arguments.", get_usage_string());
+                        std::stringstream ss;
+                        ss << "Error: Too many positional arguments." << std::endl;
+                        print_error_usage_and_exit(ss.str());
                     }
                     // Consume the required number of arguments
                     // Get the next num_arg arguments
@@ -603,10 +601,9 @@ namespace argparse
                         // check each is not another flag or we've reached the end (not enough args)
                         if (it == command_line_args.end() || utils::is_optional(*it))
                         {
-                            std::cout << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more inputs (" << pos_arg.num_args() << " total)." << std::endl;
-                            std::cout << get_usage_and_help_string() << std::endl;
-                            std::exit(1);
-                            // throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
+                            std::stringstream ss;
+                            ss << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more input(s) (" << pos_arg.num_args() << " total)." << std::endl;
+                            print_error_usage_and_exit(ss.str());
                         }
                         else
                         {
@@ -636,13 +633,15 @@ namespace argparse
             }
             if (!missing_arguments.empty())
             {
-                throw exception::insufficient_arguments(missing_arguments, get_usage_string());
+                std::stringstream ss;
+                ss << "Error: The following arguments are required: ";
+                for (auto& arg : missing_arguments)
+                {
+                    ss << arg << " ";
+                }
+                ss << std::endl;
+                print_error_usage_and_exit(ss.str());
             }
-        }
-
-        void print_help() const
-        {
-
         }
 
     private:
@@ -732,6 +731,13 @@ namespace argparse
             ss << get_usage_string() << std::endl;
             ss << get_help_string() << std::endl;
             return ss.str();
+        }
+
+        void print_error_usage_and_exit(std::string message) const
+        {
+            std::cout << message << std::endl;
+            std::cout << get_usage_string() << std::endl;
+            std::exit(1);
         }
 
     private:
