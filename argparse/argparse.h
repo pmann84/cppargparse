@@ -290,7 +290,7 @@ namespace argparse
                 if (is_container_v<ArgT>)
                 {
                     // Return all the values
-                    return any_container_cast<ArgT>(mValues);
+                    return any_container_cast<ArgT>(m_values);
                 }
                 else
                 {
