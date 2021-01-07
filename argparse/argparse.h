@@ -76,31 +76,25 @@ namespace argparse
             return p == string_to_trim.cend() ? std::basic_string<CharT>() : std::basic_string<CharT>(p, string_to_trim.end());
         }
 
-        std::string to_upper(const std::string& str)
+        template<typename CharT>
+        std::basic_string<CharT> to_upper(const std::basic_string<CharT>& str)
         {
-            std::string upper_str = str;
-            std::for_each(
-                    upper_str.begin(),
-                    upper_str.end(),
-                    [](char & c)
-                    {
-                        c = std::toupper(c);
-                    }
-                );
+            std::basic_string<CharT> upper_str(str);
+            for (auto& c : upper_str)
+            {
+                c = std::toupper(c);
+            }
             return upper_str;
         }
 
-        std::string to_lower(const std::string& str)
+        template<typename CharT>
+        std::basic_string<CharT> to_lower(const std::basic_string<CharT>& str)
         {
-            std::string lower_str = str;
-            std::for_each(
-                    lower_str.begin(),
-                    lower_str.end(),
-                    [](char & c)
-                    {
-                        c = std::tolower(c);
-                    }
-            );
+            std::basic_string<CharT> lower_str(str);
+            for (auto& c : lower_str)
+            {
+                c = std::tolower(c);
+            }
             return lower_str;
         }
 
@@ -216,6 +210,26 @@ namespace argparse
         }
     }
 
+    // Primary template that supports types that arent containers
+    template<typename T, typename = void>
+    struct is_container : std::false_type {};
+
+    // Specialisation that says strings are not classed as containers here
+    template<>
+    struct is_container<std::string> : std::false_type {};
+
+    // Specialisation that recognises types that are containers
+    template<typename T>
+    struct is_container<T,
+            std::void_t<typename T::value_type,
+                    decltype(std::declval<T>().begin()),
+                    decltype(std::declval<T>().end())>
+    > : std::true_type {};
+
+    // Convenience for testing types
+    template <typename T>
+    static constexpr bool is_container_v = is_container<T>::value;
+
     class argument
     {
     public:
@@ -224,7 +238,8 @@ namespace argparse
             // Validate that if one name starts with - then all must!
             if (!utils::validate_optional(m_flags))
             {
-               throw std::runtime_error("Error: Invalid option string: all names must start with a character '-' or none of them.");
+                throw std::runtime_error(
+                        "Error: Invalid option string: all names must start with a character '-' or none of them.");
             }
             // Use the longest name as the destination
             std::string longest_arg = string_utils::get_string_with_max_size(m_flags);
@@ -243,13 +258,50 @@ namespace argparse
         template<typename ArgT>
         void value(ArgT value)
         {
-            m_value = value;
+            if (m_values.size() < m_nargs)
+            {
+                m_values.push_back(value);
+            }
+            std::stringstream ss;
+            ss << "Error: Attempt to store more than " << m_nargs << " values in argument " << m_destination << ".";
+            throw std::runtime_error(ss.str());
         }
 
-        template <typename ArgT>
-        ArgT value()
+        template <typename T>
+        static T any_container_cast(const std::vector<std::any>& container)
         {
-            return std::any_cast<ArgT>(m_value);
+            using value_t = typename T::value_type;
+            T result;
+            std::transform(container.begin(), container.end(), std::back_inserter(result),
+                   [](const auto& c_value)
+                   {
+                       return std::any_cast<value_t>(c_value);
+                   }
+               );
+            return result;
+        }
+
+        // TODO: write tests for getting multiple values back
+        template<typename ArgT>
+        ArgT get() const
+        {
+            if (!m_values.empty())
+            {
+                if (is_container_v<ArgT>)
+                {
+                    // Return all the values
+                    return any_container_cast<ArgT>(mValues);
+                }
+                else
+                {
+                    return std::any_cast<ArgT>(m_values.front());
+                }
+            }
+            if (m_default_value.has_value())
+            {
+                return std::any_cast<ArgT>(m_default_value);
+            }
+            throw std::runtime_error("No value provided for argument.");
         }
 
         // The number of command-line arguments that should be consumed.
@@ -268,7 +320,7 @@ namespace argparse
         // The value produced if the argument is absent from the command line and if it is absent from the namespace object.
         argument& default_value()
         {
-            m_value = false;
+            m_default_value = false;
             return *this;
         }
 
@@ -325,11 +377,21 @@ namespace argparse
 
         bool is_set() const noexcept
         {
-            return m_value.has_value();
+            bool is_set = true;
+            for (auto& val : m_values)
+            {
+                if (!val.has_value())
+                {
+                    is_set = false;
+                }
+            }
+            return is_set;
         }
+
     private:
         // TODO: this needs to be a vector of values so we can store num_args
-        std::any m_value;
+        std::vector<std::any> m_values;
+        std::any m_default_value;
         std::string m_destination;
         std::vector<std::string> m_flags;
         std::string m_help;
@@ -431,13 +493,13 @@ namespace argparse
             if (pos_it != m_positional_arguments.end())
             {
                 std::cout << "Found Positional Argument: " << pos_it->dest() << std::endl;
-                return pos_it->value<ArgT>();
+                return pos_it->get<ArgT>();
             }
 
             if (opt_it != m_optional_arguments.end())
             {
                 std::cout << "Found Optional Argument: " << opt_it->dest() << std::endl;
-                return opt_it->value<ArgT>();
+                return opt_it->get<ArgT>();
             }
             throw exception::unknown_argument(name);
         }

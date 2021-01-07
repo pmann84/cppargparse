@@ -99,7 +99,7 @@ TEST(BasicTests, Sandbox)
     parser.add_argument({"-b", "--baz"}).help("baz argument help.");
     parser.add_argument({"-g", "--goo"}).num_args(3).help("baz argument help.");
 
-    std::vector<char*> argv = {"DummyApp.exe", "a", "b1", "b2"};
+    std::vector<char*> argv = {"DummyApp.exe", "a", "b1", "b2", "b3"};
     parser.parse_args(argv.size(), &argv[0]);
     ASSERT_EQ(true, true);
 }
