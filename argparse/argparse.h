@@ -261,6 +261,7 @@ namespace argparse
             if (m_values.size() < m_nargs)
             {
                 m_values.push_back(value);
+                return;
             }
             std::stringstream ss;
             ss << "Error: Attempt to store more than " << m_nargs << " values in argument " << m_destination << ".";

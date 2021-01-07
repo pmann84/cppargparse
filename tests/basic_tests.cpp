@@ -1,7 +1,7 @@
 #include <argparse.h>
 
 #include "gtest/gtest.h"
-//#include "gmock/gmock.h"
+#include "gmock/gmock.h"
 
 TEST(BasicTests, TestOnePositionalArgumentSuccessfullyEntered)
 {
@@ -23,6 +23,30 @@ TEST(BasicTests, TestTwoPositionalArgumentsSuccessfullyEntered)
     parser.parse_args(argv.size(), &argv[0]);
     ASSERT_EQ(parser.get<std::string>("bar"), argv[1]);
     ASSERT_EQ(parser.get<std::string>("foo"), argv[2]);
+}
+
+TEST(BasicTests, TestArgumentsAreReturnedForSuccessfullyEnteredMultiplePositionalArguments)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").num_args(3).help("Positional foo argument.");
+
+    std::vector<char*> argv = {"DummyApp.exe", "FOO1", "FOO2", "FOO3"};
+    parser.parse_args(argv.size(), &argv[0]);
+
+    ASSERT_THAT(parser.get<std::vector<std::string>>("foo"), ::testing::ContainerEq(std::vector<std::string>({"FOO1", "FOO2", "FOO3"})));
+}
+
+TEST(BasicTests, TestMultipleArgumentsAreReturnedForSuccessfullyEnteredMultiplePositionalArguments)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").num_args(3).help("Positional foo argument.");
+    parser.add_argument("bar").num_args(2).help("Positional bar argument.");
+
+    std::vector<char*> argv = {"DummyApp.exe", "FOO1", "FOO2", "FOO3", "BAR1", "BAR2"};
+    parser.parse_args(argv.size(), &argv[0]);
+
+    ASSERT_THAT(parser.get<std::vector<std::string>>("foo"), ::testing::ContainerEq(std::vector<std::string>({"FOO1", "FOO2", "FOO3"})));
+    ASSERT_THAT(parser.get<std::vector<std::string>>("bar"), ::testing::ContainerEq(std::vector<std::string>({"BAR1", "BAR2"})));
 }
 
 // TODO: Throws bad any_cast...

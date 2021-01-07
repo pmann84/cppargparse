@@ -13,5 +13,11 @@ int main(int argc, char *argv[])
     auto p = argparse::argument_parser();
     setup_parser(p);
     p.parse_args(argc, argv);
+    std::vector<std::string> bar_vals = p.get<std::vector<std::string>>("bar");
+    std::cout << "bar has values: ";
+    for (auto bv : bar_vals)
+    {
+        std::cout << bv << ", ";
+    }
     return 0;
 }
