@@ -13,6 +13,7 @@
 #include <functional>
 
 // TODO: Must support negative numbers as arguments! This isnt supported currently! :S
+// TODO: Must add proper support for multi args options, currently the values are overwritten everytime!
 // Arguments must maintain the order that they are added in
 // Display optional args first then positional
 // Optional arguments can be input in any order around positional arguments, but positional args must be in order relative to themselves
@@ -452,7 +453,10 @@ namespace argparse
                     );
                     if (arg_it == m_optional_arguments.end())
                     {
-                        throw exception::invalid_argument(*it, "Invalid Optional Argument", get_usage_string());
+                        std::cout << "Error: Unknown optional argument. " << *it << std::endl;
+                        std::cout << get_usage_string() << std::endl;
+                        std::exit(1);
+                        // throw exception::invalid_argument(*it, "Invalid Optional Argument", get_usage_string());
                     }
                     else
                     {
@@ -467,10 +471,13 @@ namespace argparse
                             {
                                 // Get the next arg
                                 it++;
-                                // check each is not another flag
-                                if (argument::is_optional(*it))
+                                // check each is not another flag or we havent hit the end
+                                if (it == command_line_args.end() || argument::is_optional(*it))
                                 {
-                                    throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
+                                    std::cout << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more inputs (" << arg_it->num_args() << " total)." << std::endl;
+                                    std::cout << get_usage_string() << std::endl;
+                                    std::exit(1);
+//                                  throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
                                 }
                                 else
                                 {
@@ -491,13 +498,40 @@ namespace argparse
                     // Verify we have enough positional arguments
                     if (pos_index >= m_positional_arguments.size())
                     {
-                        throw exception::invalid_argument("Too many positional arguments.", get_usage_string());
+                        std::cout << "Error: Too many positional arguments." << std::endl;
+                        std::cout << get_usage_string() << std::endl;
+                        std::exit(1);
+                        //throw exception::invalid_argument("Too many positional arguments.", get_usage_string());
                     }
-                    // Grab the value and stick it in the next positional argument
-                    m_positional_arguments[pos_index].value(*it);
+                    // Consume the required number of arguments
+                    // Get the next num_arg arguments
+                    argument& pos_arg = m_positional_arguments[pos_index];
+                    auto count = pos_arg.num_args();
+                    while (count != 0)
+                    {
+                        // check each is not another flag or we've reached the end (not enough args)
+                        if (it == command_line_args.end() || argument::is_optional(*it))
+                        {
+                            std::cout << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more inputs (" << pos_arg.num_args() << " total)." << std::endl;
+                            std::cout << get_usage_string() << std::endl;
+                            std::exit(1);
+                            // throw exception::invalid_argument(*it, "Not expecting optional argument!", get_usage_string());
+                        }
+                        else
+                        {
+                            std::cout << "Adding arg " << pos_arg.num_args() - count << " to " <<  pos_arg.dest() << std::endl;
+                            // Grab the value and stick it in the next positional argument
+                            pos_arg.value(*it);
+                        }
+                        // Advance to the next arg unless its the last one
+                        if (count > 1)
+                        {
+                            ++it;
+                        }
+                        --count;
+                    }
                     pos_index++;
                 }
-//                std::cout << *it << std::endl;
             }
 
             // Now we need to check that all positional arguments have been filled
@@ -517,8 +551,10 @@ namespace argparse
 
         std::string get_usage_string()
         {
+            // Optional arguments are surrounded by [], with the name being the longest flag available
+            // Positional arguments are printed as the dest name
             std::stringstream ss;
-            ss << m_program_name << " ";
+            ss << "Usage: " << m_program_name << " ";
             for (auto& arg : m_optional_arguments)
             {
                 // If single -- name show that, if only - name, show that arg.
@@ -533,12 +569,22 @@ namespace argparse
             }
             for (auto& arg : m_positional_arguments)
             {
-                // Output the dest name
-                ss << arg.dest() << " ";
+                size_t count = arg.num_args();
+                while (count > 0)
+                {
+                    // Output the dest name
+                    ss << arg.dest() << " ";
+                    --count;
+                }
             }
             return ss.str();
-            return "Usage: prog.exe [-h] [--sum] N [N ...]";
         }
+
+        void print_help() const
+        {
+
+        }
+
 
         // Iterate over the arguments in order and process them as such, if we hit an error
         // then we throw with error message
@@ -563,26 +609,6 @@ namespace argparse
 //            {
 //                print_args();
 //            }
-
-//        std::string get_usage_string() const
-//        {
-//            std::stringstream ss;
-//            ss << m_program_name << " ";
-//            for (auto& arg : m_positional_arguments)
-//            {
-//                if (arg.is_optional())
-//                {
-//                    // If single -- name show that, if only - name, show that
-////                    arg.
-//                }
-//                else
-//                {
-//                    ss <<
-//                }
-//                ss << " ";
-//            }
-//            return ss.str();
-//        }
 
     private:
         argument& add_argument(argument arg)

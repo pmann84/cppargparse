@@ -1,7 +1,3 @@
-//
-// Created by Peter on 21/12/2020.
-//
-
 #include <argparse.h>
 
 #include "gtest/gtest.h"
@@ -84,4 +80,17 @@ TEST(BasicTests, TestPositionalAndOptionalArgumentEnteredSuccessfullyOptionalArg
     parser.parse_args(argv.size(), &argv[0]);
     ASSERT_EQ(parser.get<std::string>("bar"), argv[3]);
     ASSERT_EQ(parser.get<std::string>("foo"), argv[2]);
+}
+
+TEST(BasicTests, Sandbox)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").help("foo argument help.");
+    parser.add_argument("bar").num_args(3).help("bar argument help.");
+    parser.add_argument({"-b", "--baz"}).help("baz argument help.");
+    parser.add_argument({"-g", "--goo"}).num_args(3).help("baz argument help.");
+
+    std::vector<char*> argv = {"DummyApp.exe", "a", "b1", "b2"};
+    parser.parse_args(argv.size(), &argv[0]);
+    ASSERT_EQ(true, true);
 }
