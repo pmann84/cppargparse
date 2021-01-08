@@ -102,7 +102,7 @@ Optional Arguments:
 ```
 For a more complicated set of arguments like the `num_args` example above it would look something like
 ```text
-Usage MyParser [-h] [b B] [g G G G] foo bar bar bar
+Usage MyParser [-h] [-b B] [-g G G G] foo bar bar bar
 
     Program description
 
