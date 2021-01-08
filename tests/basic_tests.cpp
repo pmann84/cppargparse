@@ -49,19 +49,6 @@ TEST(BasicTests, TestMultipleArgumentsAreReturnedForSuccessfullyEnteredMultipleP
     ASSERT_THAT(parser.get<std::vector<std::string>>("bar"), ::testing::ContainerEq(std::vector<std::string>({"BAR1", "BAR2"})));
 }
 
-// TODO: Throws bad any_cast...
-//TEST(BasicTests, TestTwoPositionalArgumentsSuccessfullyEnteredGettingDifferentType)
-//{
-//    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
-//    parser.add_argument("inputpath").help("Path to input file.");
-//    parser.add_argument("timeout").help("A user defined timeout for something");
-//
-//    std::vector<char*> argv = {"DummyApp.exe", "myinputpath", "5"};
-//    parser.parse_args(argv.size(), &argv[0]);
-//    ASSERT_EQ(parser.get<std::string>("inputpath"), argv[1]);
-//    ASSERT_EQ(parser.get<int>("timeout"), 5);
-//}
-
 TEST(BasicTests, TestOptionalArgumentEnteredSuccessfully)
 {
     auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
@@ -110,20 +97,4 @@ TEST(BasicTests, TestMixedNameArgumentsThrowError)
 {
     auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
     ASSERT_ANY_THROW(parser.add_argument({"foo", "-f"}));
-}
-
-
-
-/// Temporary test
-TEST(BasicTests, Sandbox)
-{
-    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
-    parser.add_argument("foo").help("foo argument help.");
-    parser.add_argument("bar").num_args(3).help("bar argument help.");
-    parser.add_argument({"-b", "--baz"}).help("baz argument help.");
-    parser.add_argument({"-g", "--goo"}).num_args(3).help("baz argument help.");
-
-    std::vector<char*> argv = {"DummyApp.exe", "a", "b1", "b2", "b3"};
-    parser.parse_args(argv.size(), &argv[0]);
-    ASSERT_EQ(true, true);
 }

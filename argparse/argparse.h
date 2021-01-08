@@ -11,13 +11,7 @@
 #include <algorithm>
 #include <sstream>
 #include <functional>
-
-// TODO: Must support negative numbers as arguments! This isnt supported currently! :S
-// TODO: Must add proper support for multi args options, currently the values are overwritten everytime!
-// TODO: Nested parsers - make sure you sort out help strings for this
-// Arguments must maintain the order that they are added in
-// Display optional args first then positional
-// Optional arguments can be input in any order around positional arguments, but positional args must be in order relative to themselves
+#include <filesystem>
 
 namespace argparse
 {
@@ -109,41 +103,8 @@ namespace argparse
         }
     }
 
-    namespace exception
+    namespace exceptions
     {
-        class invalid_argument : public std::exception
-        {
-        public:
-            explicit invalid_argument(const std::string& message, const std::string& usage_str)
-                    : invalid_argument("", message, usage_str)
-            {
-            }
-
-            explicit invalid_argument(const std::string& invalid_arg_name, const std::string& message, const std::string& usage_str)
-                    : m_invalid_arg_name(invalid_arg_name)
-                    , m_message(message)
-                    , m_usage_str(usage_str)
-            {
-            }
-
-            virtual char const* what() const noexcept
-            {
-                std::stringstream error_msg;
-                error_msg << "Error: Invalid Argument: ";
-                if (!m_invalid_arg_name.empty())
-                {
-                    error_msg << m_invalid_arg_name << std::endl;
-                }
-                error_msg << m_message << std::endl;
-                error_msg << m_usage_str << std::endl;
-                return error_msg.str().c_str();
-            }
-        private:
-            std::string m_usage_str;
-            std::string m_invalid_arg_name;
-            std::string m_message;
-        };
-
         class unknown_argument : public std::exception
         {
         public:
@@ -160,38 +121,16 @@ namespace argparse
         private:
             std::string m_unknown_argument_name;
         };
-
-        class insufficient_arguments : public std::exception
-        {
-        public:
-            explicit insufficient_arguments(
-                    const std::vector<std::string>& missing_argument_names,
-                    const std::string& usage_str)
-                    : m_missing_argument_names(missing_argument_names)
-                    , m_usage_str(usage_str)
-            {
-            }
-
-            virtual char const* what() const noexcept
-            {
-                std::stringstream error_msg;
-                error_msg << "Error: The following arguments are required: " << string_utils::join(m_missing_argument_names, std::string(", ")) << std::endl;
-                return error_msg.str().c_str();
-            }
-        private:
-            std::vector<std::string> m_missing_argument_names;
-            std::string m_usage_str;
-        };
     }
 
-    namespace utils
+    namespace validate
     {
         bool is_optional(const std::string& argument_name)
         {
             return string_utils::starts_with(argument_name, std::string("-"));
         }
 
-        bool validate_optional(const std::vector<std::string>& argument_names)
+        bool is_valid_argument_flags(const std::vector<std::string>& argument_names)
         {
             bool positional = false;
             bool optional = false;
@@ -200,7 +139,8 @@ namespace argparse
                 if (is_optional(name))
                 {
                     optional = true;
-                } else
+                }
+                else
                 {
                     positional = true;
                 }
@@ -210,25 +150,28 @@ namespace argparse
         }
     }
 
-    // Primary template that supports types that arent containers
-    template<typename T, typename = void>
-    struct is_container : std::false_type {};
+    namespace utils
+    {
+        // Primary template that supports types that arent containers
+        template<typename T, typename = void>
+        struct is_container : std::false_type {};
 
-    // Specialisation that says strings are not classed as containers here
-    template<>
-    struct is_container<std::string> : std::false_type {};
+        // Specialisation that says strings are not classed as containers here
+        template<>
+        struct is_container<std::string> : std::false_type {};
 
-    // Specialisation that recognises types that are containers
-    template<typename T>
-    struct is_container<T,
-            std::void_t<typename T::value_type,
-                    decltype(std::declval<T>().begin()),
-                    decltype(std::declval<T>().end())>
-    > : std::true_type {};
+        // Specialisation that recognises types that are containers
+        template<typename T>
+        struct is_container<T,
+                std::void_t<typename T::value_type,
+                        decltype(std::declval<T>().begin()),
+                        decltype(std::declval<T>().end())>
+        > : std::true_type {};
 
-    // Convenience for testing types
-    template <typename T>
-    static constexpr bool is_container_v = is_container<T>::value;
+        // Convenience for testing types
+        template <typename T>
+        static constexpr bool is_container_value = is_container<T>::value;
+    }
 
     class argument
     {
@@ -236,7 +179,7 @@ namespace argparse
         argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1)
         {
             // Validate that if one name starts with - then all must!
-            if (!utils::validate_optional(m_flags))
+            if (!validate::is_valid_argument_flags(m_flags))
             {
                 throw std::runtime_error(
                         "Error: Invalid option string: all names must start with a character '-' or none of them.");
@@ -244,7 +187,7 @@ namespace argparse
             // Use the longest name as the destination
             std::string longest_arg = string_utils::get_string_with_max_size(m_flags);
             m_destination = longest_arg;
-            if (utils::is_optional(longest_arg))
+            if (validate::is_optional(longest_arg))
             {
                 m_destination = string_utils::trim_left(longest_arg, '-');
             }
@@ -282,25 +225,24 @@ namespace argparse
             return result;
         }
 
-        // TODO: write tests for getting multiple values back
-        template<typename ArgT>
-        ArgT get() const
+        template<typename ReturnArgT>
+        ReturnArgT get() const
         {
             if (!m_values.empty())
             {
-                if (is_container_v<ArgT>)
+                if (utils::is_container_value<ReturnArgT>)
                 {
                     // Return all the values
-                    return any_container_cast<ArgT>(m_values);
+                    return any_container_cast<ReturnArgT>(m_values);
                 }
                 else
                 {
-                    return std::any_cast<ArgT>(m_values.front());
+                    return std::any_cast<ReturnArgT>(m_values.front());
                 }
             }
             if (m_default_value.has_value())
             {
-                return std::any_cast<ArgT>(m_default_value);
+                return std::any_cast<ReturnArgT>(m_default_value);
             }
             throw std::runtime_error("No value provided for argument.");
         }
@@ -308,7 +250,6 @@ namespace argparse
         // The number of command-line arguments that should be consumed.
         argument &num_args(size_t n)
         {
-            // TODO: Validate - defaults to 1 but can be set to zero for a true flag
             m_nargs = n;
             return *this;
         }
@@ -349,7 +290,7 @@ namespace argparse
 
         bool is_optional() const
         {
-            return utils::is_optional(m_flags[0]);
+            return validate::is_optional(m_flags[0]);
         }
 
 //        friend std::ostream &operator<<(std::ostream &os, const argument &arg);
@@ -391,7 +332,6 @@ namespace argparse
         }
 
     private:
-        // TODO: this needs to be a vector of values so we can store num_args
         std::vector<std::any> m_values;
         std::any m_default_value;
         std::string m_destination;
@@ -399,23 +339,6 @@ namespace argparse
         std::string m_help;
         size_t m_nargs;
     };
-
-//    std::ostream &operator<<(std::ostream &os, const argument &arg)
-//    {
-//        os << << ":" << std::setw(50)  << arg.m_description;
-//        return os;
-//    }
-
-//name or flags - Either a name or a list of option strings, e.g. foo or -f, --foo.
-//action - The basic type of action to be taken when this argument is encountered at the command line.
-//const - A constant value required by some action and nargs selections.
-//type - The type to which the command-line argument should be converted.
-//choices - A container of the allowable values for the argument.
-//required - Whether or not the command-line option may be omitted (optionals only).
-//help - A brief description of what the argument does.
-//metavar - A name for the argument in usage messages.
-//dest - The name of the attribute to be added to the object returned by parse_args().
-
 
     class argument_parser
     {
@@ -439,25 +362,11 @@ namespace argparse
             return *this;
         }
 
-//    argument& add_argument(const std::string& flags)
-//    {
-//        std::vector<std::string> flags_or_names;
-//        std::va_list inputs;
-//        va_start(inputs, flags);
-//        for (int i = 0; i < flags; ++i)
-//        {
-//
-//        }
-//
-//        int result = 0;
-//        std::va_list args;
-//        va_start(args, count);
-//        for (int i = 0; i < count; ++i) {
-//            result += va_arg(args, int);
-//        }
-//        va_end(args);
-//        return result;
-//    }
+        argument_parser& name(const std::string& name)
+        {
+            m_program_name = name;
+            return *this;
+        }
 
         argument& add_argument(const std::initializer_list<std::string> names)
         {
@@ -474,7 +383,6 @@ namespace argparse
         template <typename ArgT>
         ArgT get(std::string name)
         {
-            std::cout << "Getting Argument: " << name << std::endl;
             auto pos_it = std::find_if(
                     m_positional_arguments.begin(),
                     m_positional_arguments.end(),
@@ -494,16 +402,14 @@ namespace argparse
 
             if (pos_it != m_positional_arguments.end())
             {
-                std::cout << "Found Positional Argument: " << pos_it->dest() << std::endl;
                 return pos_it->get<ArgT>();
             }
 
             if (opt_it != m_optional_arguments.end())
             {
-                std::cout << "Found Optional Argument: " << opt_it->dest() << std::endl;
                 return opt_it->get<ArgT>();
             }
-            throw exception::unknown_argument(name);
+            throw exceptions::unknown_argument(name);
         }
 
         void parse_args(int argc, char *argv[])
@@ -514,7 +420,7 @@ namespace argparse
             // Check if we have a name, if not, then take it from the arguments list
             if (m_program_name.empty() && !command_line_args.empty())
             {
-                m_program_name = command_line_args.front();
+                m_program_name = std::filesystem::path(command_line_args.front()).filename().string();
             }
 
             // Iterate over the given arguments
@@ -522,9 +428,8 @@ namespace argparse
             for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
             {
                 // Check if its positional or not
-                if (utils::is_optional(*it))
+                if (validate::is_optional(*it))
                 {
-                    std::cout << "Optional Argument Detected: " << *it << std::endl;
                     // If asked for help then print usage and help and exit
                     if (get_help_argument().matches_arg_name(*it))
                     {
@@ -539,7 +444,6 @@ namespace argparse
                             m_optional_arguments.end(),
                             [&it](const argument& arg)
                             {
-                                std::cout << "Comparing " << arg.get_name_string() << " against " << *it << std::endl;
                                 return arg.matches_arg_name(*it);
                             }
                     );
@@ -551,8 +455,6 @@ namespace argparse
                     }
                     else
                     {
-                        // Check if we want the
-                        std::cout << "Matched argument " << *it << " with optional argument " << arg_it->get_name_string() << std::endl;
                         // Get the number of args meant to be consumed
                         if (arg_it->num_args() > 0)
                         {
@@ -563,7 +465,7 @@ namespace argparse
                                 // Get the next arg
                                 it++;
                                 // check each is not another flag or we havent hit the end
-                                if (it == command_line_args.end() || utils::is_optional(*it))
+                                if (it == command_line_args.end() || validate::is_optional(*it))
                                 {
                                     std::stringstream ss;
                                     ss << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more input(s) (" << arg_it->num_args() << " total)." << std::endl;
@@ -584,7 +486,6 @@ namespace argparse
                 }
                 else
                 {
-                    std::cout << "Positional Argument Detected: " << *it << std::endl;
                     // Verify we have enough positional arguments
                     if (pos_index >= m_positional_arguments.size())
                     {
@@ -599,7 +500,7 @@ namespace argparse
                     while (count != 0)
                     {
                         // check each is not another flag or we've reached the end (not enough args)
-                        if (it == command_line_args.end() || utils::is_optional(*it))
+                        if (it == command_line_args.end() || validate::is_optional(*it))
                         {
                             std::stringstream ss;
                             ss << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more input(s) (" << pos_arg.num_args() << " total)." << std::endl;
@@ -607,7 +508,6 @@ namespace argparse
                         }
                         else
                         {
-                            std::cout << "Adding arg " << pos_arg.num_args() - count << " to " <<  pos_arg.dest() << std::endl;
                             // Grab the value and stick it in the next positional argument
                             pos_arg.value(*it);
                         }
@@ -694,12 +594,11 @@ namespace argparse
 
         std::string get_help_string() const
         {
-            // TODO: Space the output of this function better
             std::stringstream ss;
             ss << std::endl;
             if (!m_description.empty())
             {
-                ss << m_description << std::endl << std::endl;
+                ss << "\t" << m_description << std::endl << std::endl;
             }
 
             if (m_positional_arguments.size() > 0)
@@ -718,7 +617,6 @@ namespace argparse
                 for (auto& opt : m_optional_arguments)
                 {
                     ss << opt.get_name_string() << ": " << opt.help() << std::endl;
-                    // TODO: Add generation of default info, specify this in brackets after the above info
                 }
                 ss << std::endl;
             }
@@ -740,12 +638,12 @@ namespace argparse
             std::exit(1);
         }
 
-    private:
-    std::string m_program_name;
-    std::string m_description;
-    std::vector<argument> m_positional_arguments;
-    std::vector<argument> m_optional_arguments;
-};
+        private:
+        std::string m_program_name;
+        std::string m_description;
+        std::vector<argument> m_positional_arguments;
+        std::vector<argument> m_optional_arguments;
+    };
 }
 
 #endif // __ARGPARSE_H__
