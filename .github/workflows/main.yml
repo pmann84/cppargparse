@@ -16,7 +16,7 @@ jobs:
 
     steps:
     - name: Checkout reposistory
-      uses: actions/checkout@master
+      uses: actions/checkout@main
       
     - name: Checkout submodules
       run: git submodule update --init --recursive
