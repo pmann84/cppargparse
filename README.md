@@ -1,4 +1,6 @@
-# cppargparse
+# cppargparse 
+[![CI - Latest](https://github.com/pmann84/cppargparse/actions/workflows/main.yml/badge.svg)](https://github.com/pmann84/cppargparse/actions/workflows/main.yml)
+
 This is a Python style command line argument parser in C++.
 
 ## Check out
