@@ -6,3 +6,5 @@
 *release*
 .idea
 .vs
+.vscode
+build*

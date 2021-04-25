@@ -108,18 +108,19 @@ namespace argparse
         class unknown_argument : public std::exception
         {
         public:
-            explicit unknown_argument(const std::string& unknown_argument_name) : m_unknown_argument_name(unknown_argument_name)
+            explicit unknown_argument(const std::string& unknown_argument_name)
             {
+                std::stringstream error_msg;
+                error_msg << "Error: Attempt to Access Unknown Argument: " << unknown_argument_name << std::endl;
+                m_error_message = error_msg.str();
             }
 
             virtual char const* what() const noexcept
             {
-                std::stringstream error_msg;
-                error_msg << "Error: Attempt to Access Unknown Argument: " << m_unknown_argument_name << std::endl;
-                return error_msg.str().c_str();
+                return m_error_message.c_str();
             }
         private:
-            std::string m_unknown_argument_name;
+            std::string m_error_message;
         };
     }
 
@@ -365,6 +366,14 @@ namespace argparse
         argument_parser& name(const std::string& name)
         {
             m_program_name = name;
+            return *this;
+        }
+
+        argument_parser& enable_config_file()
+        {
+            add_argument("--configFile")
+                    .num_args(1)
+                    .help("Read in arguments from the specified config file.");
             return *this;
         }
 
