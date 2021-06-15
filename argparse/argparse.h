@@ -1,5 +1,5 @@
-#ifndef __ARGPARSE_H__
-#define __ARGPARSE_H__
+#ifndef ARGPARSE_H__
+#define ARGPARSE_H__
 
 #include <any>
 #include <string>
@@ -18,13 +18,13 @@ namespace argparse
     namespace string_utils
     {
         template<typename CharT>
-        bool starts_with(const std::basic_string<CharT> &str, const std::basic_string<CharT> &prefix)
+        inline bool starts_with(const std::basic_string<CharT> &str, const std::basic_string<CharT> &prefix)
         {
             return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
         }
 
         template<typename CharT>
-        std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT> &string_to_split, const std::basic_string<CharT> &delimiter)
+        inline std::vector<std::basic_string<CharT>> split(const std::basic_string<CharT> &string_to_split, const std::basic_string<CharT> &delimiter)
         {
             std::vector<std::basic_string<CharT>> split_string;
             if (string_to_split.empty()) return split_string;
@@ -47,7 +47,7 @@ namespace argparse
         }
 
         template<typename CharT>
-        std::basic_string<CharT> join(const std::vector<std::basic_string<CharT>> &split_string, const std::basic_string<CharT> &delimiter)
+        inline std::basic_string<CharT> join(const std::vector<std::basic_string<CharT>> &split_string, const std::basic_string<CharT> &delimiter)
         {
             if (split_string.empty()) return std::basic_string<CharT>();
             if (split_string.size() == 1) return split_string[0];
@@ -62,7 +62,7 @@ namespace argparse
         }
 
         template<typename CharT>
-        std::basic_string<CharT> trim_left(const std::basic_string<CharT>& string_to_trim, const CharT delimiter)
+        inline std::basic_string<CharT> trim_left(const std::basic_string<CharT>& string_to_trim, const CharT delimiter)
         {
             if (string_to_trim.empty()) return std::basic_string<CharT>();
             typename std::basic_string<CharT>::const_iterator p = string_to_trim.cbegin();
@@ -71,7 +71,7 @@ namespace argparse
         }
 
         template<typename CharT>
-        std::basic_string<CharT> to_upper(const std::basic_string<CharT>& str)
+        inline std::basic_string<CharT> to_upper(const std::basic_string<CharT>& str)
         {
             std::basic_string<CharT> upper_str(str);
             for (auto& c : upper_str)
@@ -82,7 +82,7 @@ namespace argparse
         }
 
         template<typename CharT>
-        std::basic_string<CharT> to_lower(const std::basic_string<CharT>& str)
+        inline std::basic_string<CharT> to_lower(const std::basic_string<CharT>& str)
         {
             std::basic_string<CharT> lower_str(str);
             for (auto& c : lower_str)
@@ -92,12 +92,12 @@ namespace argparse
             return lower_str;
         }
 
-        std::string get_string_with_max_size(const std::vector<std::string>& strs)
+        inline std::string get_string_with_max_size(const std::vector<std::string>& strs)
         {
             return *std::max_element(strs.begin(), strs.end(), std::less<std::string>());
         }
 
-        size_t get_max_string_size(const std::vector<std::string>& strs)
+        inline size_t get_max_string_size(const std::vector<std::string>& strs)
         {
             return get_string_with_max_size(strs).size();
         }
@@ -126,12 +126,12 @@ namespace argparse
 
     namespace validate
     {
-        bool is_optional(const std::string& argument_name)
+        inline bool is_optional(const std::string& argument_name)
         {
             return string_utils::starts_with(argument_name, std::string("-"));
         }
 
-        bool is_valid_argument_flags(const std::vector<std::string>& argument_names)
+        inline bool is_valid_argument_flags(const std::vector<std::string>& argument_names)
         {
             bool positional = false;
             bool optional = false;
@@ -261,9 +261,10 @@ namespace argparse
         }
 
         // The value produced if the argument is absent from the command line and if it is absent from the namespace object.
-        argument& default_value()
+        template<typename ArgT>
+        argument& default_value(ArgT value)
         {
-            m_default_value = false;
+            m_default_value = value;
             return *this;
         }
 
@@ -320,7 +321,14 @@ namespace argparse
 
         bool is_set() const noexcept
         {
-            if (m_values.size() < m_nargs) return false;
+            if (m_default_value.has_value())
+            {
+                return true;
+            }
+            if (m_values.size() < m_nargs)
+            {
+                return false;
+            }
             bool is_set = true;
             for (auto& val : m_values)
             {
@@ -655,4 +663,4 @@ namespace argparse
     };
 }
 
-#endif // __ARGPARSE_H__
+#endif // ARGPARSE_H__
