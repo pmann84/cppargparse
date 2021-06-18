@@ -2,10 +2,31 @@
 
 #include "gtest/gtest.h"
 
-// TODO: This test is incorrect - check the function name shouldnt be changed
-TEST(ArgumentTests, TestArgumentLongestNameStringReturned)
+TEST(ArgumentTests, CheckDestinationIsCorrectForPositionalArguments)
+{
+    std::string argument_name = "foo";
+    argparse::argument arg(argument_name);
+    ASSERT_EQ(arg.dest(), "foo");
+}
+
+TEST(ArgumentTests, CheckDestinationIsCorrectForOptionalArguments)
 {
     std::vector<std::string> argument_names = {"--myarg", "-m"};
     argparse::argument arg(argument_names);
-    ASSERT_EQ(arg.get_longest_name_string(), "-m");
+    ASSERT_EQ(arg.dest(), "myarg");
+}
+
+TEST(ArgumentTests, CheckDestinationIsCorrectForOptionalArgumentsMultipleSingleDashes)
+{
+    std::vector<std::string> argument_names = {"-myarg", "-m"};
+    argparse::argument arg(argument_names);
+    ASSERT_EQ(arg.dest(), "myarg");
+}
+
+TEST(ArgumentTests, TestOptionalArgumentCanBeIdentifiedByAllNames)
+{
+    std::vector<std::string> argument_names = {"--myarg", "-m"};
+    argparse::argument arg(argument_names);
+    ASSERT_TRUE(arg.matches_arg_name("-m"));
+    ASSERT_TRUE(arg.matches_arg_name("--myarg"));
 }

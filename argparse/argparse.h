@@ -94,7 +94,7 @@ namespace argparse
 
         inline std::string get_string_with_max_size(const std::vector<std::string>& strs)
         {
-            return *std::max_element(strs.begin(), strs.end(), std::less<std::string>());
+            return *std::max_element(strs.begin(), strs.end(), [](const std::string& a, const std::string& b){ return a.size() < b.size(); });
         }
 
         inline size_t get_max_string_size(const std::vector<std::string>& strs)
@@ -112,6 +112,24 @@ namespace argparse
             {
                 std::stringstream error_msg;
                 error_msg << "Error: Attempt to Access Unknown Argument: " << unknown_argument_name << std::endl;
+                m_error_message = error_msg.str();
+            }
+
+            virtual char const* what() const noexcept
+            {
+                return m_error_message.c_str();
+            }
+        private:
+            std::string m_error_message;
+        };
+
+        class invalid_narg_mode : public std::exception
+        {
+        public:
+            explicit invalid_narg_mode(const std::string& narg_mode)
+            {
+                std::stringstream error_msg;
+                error_msg << "Error: Invalid NARGs specification: " << narg_mode << std::endl;
                 m_error_message = error_msg.str();
             }
 
@@ -174,10 +192,18 @@ namespace argparse
         static constexpr bool is_container_value = is_container<T>::value;
     }
 
+    enum class NargsMode
+    {
+        Integer, // N - consumes N arguments into a list
+        Single, // ? - consumes one arg if possible and produces a single item - if no arg specified then default value will be used
+        All, // * - all args are gathered into a list.
+        AtLeastOne, // + - (like *) all args are gathered into a list. Error message generated if there wasn't at least one arg present
+    };
+
     class argument
     {
     public:
-        argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1)
+        argument(const std::vector<std::string>& names) : m_flags(names), m_nargs(1), m_nargs_mode(NargsMode::Integer)
         {
             // Validate that if one name starts with - then all must!
             if (!validate::is_valid_argument_flags(m_flags))
@@ -202,7 +228,7 @@ namespace argparse
         template<typename ArgT>
         void value(ArgT value)
         {
-            if (m_values.size() < m_nargs)
+            if (m_nargs_mode == NargsMode::All || m_values.size() < m_nargs)
             {
                 m_values.push_back(value);
                 return;
@@ -243,15 +269,49 @@ namespace argparse
             }
             if (m_default_value.has_value())
             {
-                return std::any_cast<ReturnArgT>(m_default_value);
+                if (utils::is_container_value<ReturnArgT>)
+                {
+                    // Return all the values
+                    return any_container_cast<ReturnArgT>({m_default_value});
+                }
+                else
+                {
+                    return std::any_cast<ReturnArgT>(m_default_value);
+                }
+            }
+            if (m_nargs_mode == NargsMode::All)
+            {
+                return ReturnArgT();
             }
             throw std::runtime_error("No value provided for argument.");
         }
 
         // The number of command-line arguments that should be consumed.
-        argument &num_args(size_t n)
+        argument& num_args(size_t n)
         {
+            m_nargs_mode = NargsMode::Integer;
             m_nargs = n;
+            return *this;
+        }
+
+        argument& num_args(std::string n)
+        {
+            if (n == "?")
+            {
+                m_nargs_mode = NargsMode::Single;
+            }
+            else if (n == "*")
+            {
+                m_nargs_mode = NargsMode::All;
+            }
+            else if (n == "+")
+            {
+                m_nargs_mode = NargsMode::AtLeastOne;
+            }
+            else
+            {
+                throw exceptions::invalid_narg_mode(n);
+            }
             return *this;
         }
 
@@ -260,7 +320,14 @@ namespace argparse
             return m_nargs;
         }
 
+        NargsMode num_args_mode() const
+        {
+            return m_nargs_mode;
+        }
+
         // The value produced if the argument is absent from the command line and if it is absent from the namespace object.
+        // This works for all optional arguments but only works
+        // for positional args set to Single (?) or All (*)
         template<typename ArgT>
         argument& default_value(ArgT value)
         {
@@ -321,7 +388,7 @@ namespace argparse
 
         bool is_set() const noexcept
         {
-            if (m_default_value.has_value())
+            if (m_nargs_mode == NargsMode::All || m_default_value.has_value())
             {
                 return true;
             }
@@ -347,6 +414,7 @@ namespace argparse
         std::vector<std::string> m_flags;
         std::string m_help;
         size_t m_nargs;
+        NargsMode m_nargs_mode;
     };
 
     class argument_parser
@@ -427,6 +495,74 @@ namespace argparse
                 return opt_it->get<ArgT>();
             }
             throw exceptions::unknown_argument(name);
+        }
+
+        void consume_n_args(
+                argument& arg,
+                std::vector<std::string>& command_line_args,
+                std::vector<std::string>::iterator& current_arg)
+        {
+            auto count = arg.num_args();
+            while (count != 0)
+            {
+                // check each is not another flag or we've reached the end (not enough args)
+                if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
+                {
+                    std::stringstream ss;
+                    ss << "Error: Insufficient positional arguments. " << arg.dest() << " expected " << count << " more input(s) (" << arg.num_args() << " total)." << std::endl;
+                    print_error_usage_and_exit(ss.str());
+                }
+                else
+                {
+                    // Grab the value and stick it in the next positional argument
+                    arg.value(*current_arg);
+                }
+                // Advance to the next arg unless its the last one
+                if (count > 1)
+                {
+                    ++current_arg;
+                }
+                --count;
+            }
+        }
+
+        void consume_all_args(
+                argument& arg,
+                std::vector<std::string>& command_line_args,
+                std::vector<std::string>::iterator& current_arg)
+        {
+            bool still_consuming = true;
+            while (still_consuming)
+            {
+                if ((current_arg+1 == command_line_args.end())
+                || (!validate::is_optional(*current_arg) && validate::is_optional(*(current_arg+1))))
+                {
+                    arg.value(*current_arg);
+                    still_consuming = false;
+                    break;
+                }
+                else
+                {
+                    arg.value(*current_arg);
+                    ++current_arg;
+                }
+            }
+        }
+
+        void consume_at_least_one_arg(
+                argument& arg,
+                std::vector<std::string>& command_line_args,
+                std::vector<std::string>::iterator& current_arg)
+        {
+
+        }
+
+        void consume_single_arg(
+                argument& arg,
+                std::vector<std::string>& command_line_args,
+                std::vector<std::string>::iterator& current_arg)
+        {
+
         }
 
         void parse_args(int argc, char *argv[])
@@ -513,27 +649,20 @@ namespace argparse
                     // Consume the required number of arguments
                     // Get the next num_arg arguments
                     argument& pos_arg = m_positional_arguments[pos_index];
-                    auto count = pos_arg.num_args();
-                    while (count != 0)
+                    switch (pos_arg.num_args_mode())
                     {
-                        // check each is not another flag or we've reached the end (not enough args)
-                        if (it == command_line_args.end() || validate::is_optional(*it))
-                        {
-                            std::stringstream ss;
-                            ss << "Error: Insufficient positional arguments. " << pos_arg.dest() << " expected " << count << " more input(s) (" << pos_arg.num_args() << " total)." << std::endl;
-                            print_error_usage_and_exit(ss.str());
-                        }
-                        else
-                        {
-                            // Grab the value and stick it in the next positional argument
-                            pos_arg.value(*it);
-                        }
-                        // Advance to the next arg unless its the last one
-                        if (count > 1)
-                        {
-                            ++it;
-                        }
-                        --count;
+                        case NargsMode::Integer:
+                            consume_n_args(pos_arg, command_line_args, it);
+                            break;
+                        case NargsMode::All:
+                            consume_all_args(pos_arg, command_line_args, it);
+                            break;
+                        case NargsMode::AtLeastOne:
+                            consume_at_least_one_arg(pos_arg, command_line_args, it);
+                            break;
+                        case NargsMode::Single:
+                            consume_single_arg(pos_arg, command_line_args, it);
+                            break;
                     }
                     pos_index++;
                 }
@@ -587,24 +716,39 @@ namespace argparse
             for (auto& arg : m_optional_arguments)
             {
                 // If single -- name show that, if only - name, show that arg.
-                ss << "[" << arg.get_longest_name_string();
+                std::string longest_arg_name = arg.get_longest_name_string();
+                std::string arg_output_str = string_utils::to_upper(string_utils::trim_left(longest_arg_name, '-'));
+                ss << "[" << longest_arg_name;
                 size_t count = arg.num_args();
                 while (count > 0)
                 {
-                    ss << " " << string_utils::to_upper(string_utils::trim_left(arg.get_longest_name_string(), '-'));
+                    ss << " " << arg_output_str;
                     --count;
                 }
                 ss << "] ";
             }
             for (auto& arg : m_positional_arguments)
             {
-                size_t count = arg.num_args();
-                while (count > 0)
+                switch (arg.num_args_mode())
                 {
-                    // Output the dest name
-                    ss << arg.dest() << " ";
-                    --count;
+                    case NargsMode::Integer:
+                    {
+                        size_t count = arg.num_args();
+                        while (count > 0)
+                        {
+                            // Output the dest name
+                            ss << arg.dest() << " ";
+                            --count;
+                        }
+                        break;
+                    }
+                    case NargsMode::All:
+                    {
+                        ss << "[" << arg.dest() << " [" << string_utils::to_upper(arg.dest()) << " ...]] ";
+                        break;
+                    }
                 }
+
             }
             return ss.str();
         }
