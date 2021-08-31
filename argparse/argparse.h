@@ -279,7 +279,7 @@ namespace argparse
                     return std::any_cast<ReturnArgT>(m_default_value);
                 }
             }
-            if (m_nargs_mode == NargsMode::All)
+            if (m_nargs_mode == NargsMode::All || m_nargs_mode == NargsMode::Single)
             {
                 return ReturnArgT();
             }
@@ -388,7 +388,7 @@ namespace argparse
 
         bool is_set() const noexcept
         {
-            if (m_nargs_mode == NargsMode::All || m_default_value.has_value())
+            if (m_nargs_mode == NargsMode::All || m_nargs_mode == NargsMode::Single || m_default_value.has_value())
             {
                 return true;
             }
@@ -447,7 +447,7 @@ namespace argparse
 
         argument_parser& enable_config_file()
         {
-            add_argument("--configFile")
+            add_argument({"-c", "--configFile"})
                     .num_args(1)
                     .help("Read in arguments from the specified config file.");
             return *this;
@@ -502,10 +502,11 @@ namespace argparse
                 std::vector<std::string>& command_line_args,
                 std::vector<std::string>::iterator& current_arg)
         {
+            // Integer, N - consumes N arguments into a list
             auto count = arg.num_args();
             while (count != 0)
             {
-                // check each is not another flag or we've reached the end (not enough args)
+                // check each arg is not another flag or we've reached the end (not enough args)
                 if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
                 {
                     std::stringstream ss;
@@ -531,6 +532,7 @@ namespace argparse
                 std::vector<std::string>& command_line_args,
                 std::vector<std::string>::iterator& current_arg)
         {
+            // All - * - all args are gathered into a list.
             bool still_consuming = true;
             while (still_consuming)
             {
@@ -554,7 +556,32 @@ namespace argparse
                 std::vector<std::string>& command_line_args,
                 std::vector<std::string>::iterator& current_arg)
         {
+            // AtLeastOne - + - (like *) all args are gathered into a list. Error message generated if there wasn't at least one arg present
 
+            // check each arg is not another flag or we've reached the end (not enough args)
+            if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
+            {
+                std::stringstream ss;
+                ss << "Error: Insufficient positional arguments. " << arg.dest() << " expected one or more (+) input(s)." << std::endl;
+                print_error_usage_and_exit(ss.str());
+            }
+
+            bool still_consuming = true;
+            while (still_consuming)
+            {
+                if ((current_arg+1 == command_line_args.end())
+                    || (!validate::is_optional(*current_arg) && validate::is_optional(*(current_arg+1))))
+                {
+                    arg.value(*current_arg);
+                    still_consuming = false;
+                    break;
+                }
+                else
+                {
+                    arg.value(*current_arg);
+                    ++current_arg;
+                }
+            }
         }
 
         void consume_single_arg(
@@ -562,7 +589,17 @@ namespace argparse
                 std::vector<std::string>& command_line_args,
                 std::vector<std::string>::iterator& current_arg)
         {
-
+            // Single - ? - consumes one arg if possible and produces a single item - if no arg specified then default value will be used
+            // Check next arg is not another flag or if we've reached the end (not enough args)
+            if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
+            {
+                // pass
+            }
+            else
+            {
+                // Grab the value and stick it in the next positional argument
+                arg.value(*current_arg);
+            }
         }
 
         void parse_args(int argc, char *argv[])

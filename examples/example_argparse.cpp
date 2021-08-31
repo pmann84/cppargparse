@@ -20,14 +20,29 @@ void setup_config_file_example(argparse::argument_parser& parser)
     parser.add_argument("bar").num_args(3).help("bar argument help.");
 }
 
+void setup_consume_all_arguments(argparse::argument_parser& parser)
+{
+    parser.add_argument("foo").num_args("*").help("foo argument help.");
+    parser.add_argument("bar").num_args("*").help("bar argument help.");
+}
 
 int main(int argc, char *argv[])
 {
     // Setup the parser
     auto parser = argparse::argument_parser("MyParser", "Parser Description");
-    setup_multiarg_example(parser);
+//    setup_multiarg_example(parser);
 //    setup_config_file_example(parser);
+    setup_consume_all_arguments(parser);
     parser.parse_args(argc, argv);
+    try
+    {
+        parser.parse_args(argc, argv);
+    }
+    catch (std::exception& e)
+    {
+        std::cout << e.what() << std::endl;
+        std::exit(1);
+    }
 //    try
 //    {
 //        // Parse the arguments

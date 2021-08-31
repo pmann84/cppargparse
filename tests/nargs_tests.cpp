@@ -100,5 +100,53 @@ TEST(NargsTests, TestUnknownPositionalArgumentRecievedGivingArgumentsAfterConsum
     EXPECT_EXIT(parser.parse_args(argv.size(), &argv[0]), testing::ExitedWithCode(1), "");
 }
 
+TEST(NargsTests, TestSingleArgumentReturnsCorrectValueForPresentPositionalArgument)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").num_args("?").help("Positional bar argument consumes single if available.");
+
+    std::vector<char*> argv = {"DummyApp.exe", "FOO1" };
+    parser.parse_args(argv.size(), &argv[0]);
+    ASSERT_EQ(argv[1], parser.get<std::string>("foo"));
+}
+
+TEST(NargsTests, TestSingleArgumentReturnsCorrectDefaultValueForPositionalArgumentWithNoValueProvidedAndNoDefaultProvided)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").num_args("?").help("Positional bar argument consumes single if available.");
+
+    std::vector<char*> argv = {"DummyApp.exe"};
+    parser.parse_args(argv.size(), &argv[0]);
+    ASSERT_EQ("", parser.get<std::string>("foo"));
+}
+
+TEST(NargsTests, TestSingleArgumentReturnsCorrectDefaultValueForPositionalArgumentWithNoValueProvided)
+{
+    const std::string default_arg_value = "my FOO";
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument("foo").num_args("?").default_value(default_arg_value).help("Positional bar argument consumes single if available.");
+
+    std::vector<char*> argv = {"DummyApp.exe"};
+    parser.parse_args(argv.size(), &argv[0]);
+    ASSERT_EQ(default_arg_value, parser.get<std::string>("foo"));
+}
+
+
+// Single arg Test cases
+
+// Note that ? args only consume if there is an arg available to consume, other args take precedence in consuming arguments
+
+// foo = ?, bar (1 arg) -> parse(["hello"]) => bar = hello, foo = default/none
+// foo = ?, bar (1 arg) -> parse(["hello", "world"]) => bar = world, foo = hello
+// bar (1 arg), foo = ? -> parse(["hello", "world"]) => bar = hello, foo = world (respects order)
+// foo = ? -> parse(["hello", "world"]) => unrecognized arg "world"
+// foo = ?, bar = ? -> parse(["hello", "world", "again"]) => unrecognized arg "again"
+
+
+// At Least One Test Cases
+// foo = + => parse([]) => Error generated - at least one arg expected
+// foo = + => parse(["Hello"]) => foo = Hello
+// foo = + => parse(["Hello", "World"]) => foo = [Hello, World]
+
 // TODO: test integer nargs with optional arguments
 // TODO: Test switches with narg 0
