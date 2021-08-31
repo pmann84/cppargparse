@@ -31,8 +31,8 @@ int main(int argc, char *argv[])
     // Setup the parser
     auto parser = argparse::argument_parser("MyParser", "Parser Description");
 //    setup_multiarg_example(parser);
-//    setup_config_file_example(parser);
-    setup_consume_all_arguments(parser);
+    setup_config_file_example(parser);
+//    setup_consume_all_arguments(parser);
     parser.parse_args(argc, argv);
     try
     {

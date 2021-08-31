@@ -200,6 +200,20 @@ namespace argparse
         AtLeastOne, // + - (like *) all args are gathered into a list. Error message generated if there wasn't at least one arg present
     };
 
+    // Set of classes to read config files
+    class i_config_file_reader
+    {
+    public:
+
+    };
+
+    // Expand support to include json, xml
+    // For now we just support : delimited values with each on a separate line
+    class config_file_reader : public i_config_file_reader
+    {
+
+    };
+
     class argument
     {
     public:
@@ -427,6 +441,7 @@ namespace argparse
         argument_parser(std::string program_name, std::string description)
                 : m_program_name(std::move(program_name))
                 , m_description(std::move(description))
+                , m_config_file_mode(false)
         {
             add_argument({"-h", "--help"})
                     .num_args(0)
@@ -445,12 +460,30 @@ namespace argparse
             return *this;
         }
 
+        // Do we want to support other methods of config input
+        // - Command line - current method
+        // - Config file - specify config file path on command line
+        // - Environment - specify prefix to read the environment variables from
+        // These should probably cascade so that one can have multiple enabled ala .NET host builder
         argument_parser& enable_config_file()
         {
+            m_config_file_mode = true;
             add_argument({"-c", "--configFile"})
                     .num_args(1)
                     .help("Read in arguments from the specified config file.");
             return *this;
+        }
+
+        argument_parser& enable_environment_config(const std::string& prefix)
+        {
+            m_environment_mode = true;
+            m_environment_prefix = prefix;
+            return *this;
+        }
+
+        argument_parser& enable_environment_config()
+        {
+            return enable_environment_config("APP_ENV_");
         }
 
         argument& add_argument(const std::initializer_list<std::string> names)
@@ -497,6 +530,62 @@ namespace argparse
             throw exceptions::unknown_argument(name);
         }
 
+        void parse_args(int argc, char *argv[])
+        {
+            // Get the input from the command line
+            std::vector<std::string> command_line_args;
+            std::copy(argv, argv + argc, std::back_inserter(command_line_args));
+
+            // Get values from environment
+//            std::string getEnvVar( std::string const & key ) const
+//            {
+//                char * val = getenv( key.c_str() );
+//                return val == NULL ? std::string("") : std::string(val);
+//            }
+            // Get values from config file
+
+            // Check if we have a name, if not, then take it from the arguments list
+            if (m_program_name.empty() && !command_line_args.empty())
+            {
+                m_program_name = std::filesystem::path(command_line_args.front()).filename().string();
+            }
+
+            // Iterate over the given arguments
+            size_t pos_index = 0;
+            for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
+            {
+                // Check if its positional or not
+                if (validate::is_optional(*it))
+                {
+                    process_optional_command_line_argument(command_line_args, it);
+                }
+                else
+                {
+                    process_positional_command_line_argument(pos_index, command_line_args, it);
+                }
+            }
+
+            // Now we need to check that all positional arguments have been filled
+            check_for_missing_arguments();
+        }
+
+    private:
+        argument& add_argument(argument arg)
+        {
+            if (arg.is_optional())
+            {
+                m_optional_arguments.push_back(arg);
+                return m_optional_arguments.back();
+            }
+            m_positional_arguments.push_back(arg);
+            return m_positional_arguments.back();
+        }
+
+        argument& get_help_argument()
+        {
+            return m_optional_arguments[0];
+        }
+
         void consume_n_args(
                 argument& arg,
                 std::vector<std::string>& command_line_args,
@@ -537,7 +626,7 @@ namespace argparse
             while (still_consuming)
             {
                 if ((current_arg+1 == command_line_args.end())
-                || (!validate::is_optional(*current_arg) && validate::is_optional(*(current_arg+1))))
+                    || (!validate::is_optional(*current_arg) && validate::is_optional(*(current_arg+1))))
                 {
                     arg.value(*current_arg);
                     still_consuming = false;
@@ -602,110 +691,8 @@ namespace argparse
             }
         }
 
-        void parse_args(int argc, char *argv[])
+        void check_for_missing_arguments()
         {
-            std::vector<std::string> command_line_args;
-            std::copy(argv, argv + argc, std::back_inserter(command_line_args));
-
-            // Check if we have a name, if not, then take it from the arguments list
-            if (m_program_name.empty() && !command_line_args.empty())
-            {
-                m_program_name = std::filesystem::path(command_line_args.front()).filename().string();
-            }
-
-            // Iterate over the given arguments
-            size_t pos_index = 0;
-            for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
-            {
-                // Check if its positional or not
-                if (validate::is_optional(*it))
-                {
-                    // If asked for help then print usage and help and exit
-                    if (get_help_argument().matches_arg_name(*it))
-                    {
-                        std::cout << get_usage_and_help_string();
-                        std::exit(0);
-                    }
-                    // Search optional args for the name, increment the iterator and grab the value
-                    // if the next value is another optional flag (i.e. no value has been specified)
-                    // and nargs is > 0 then ERROR
-                    auto arg_it = std::find_if(
-                            m_optional_arguments.begin(),
-                            m_optional_arguments.end(),
-                            [&it](const argument& arg)
-                            {
-                                return arg.matches_arg_name(*it);
-                            }
-                    );
-                    if (arg_it == m_optional_arguments.end())
-                    {
-                        std::stringstream ss;
-                        ss << "Error: Unknown optional argument. " << *it << std::endl;
-                        print_error_usage_and_exit(ss.str());
-                    }
-                    else
-                    {
-                        // Get the number of args meant to be consumed
-                        if (arg_it->num_args() > 0)
-                        {
-                            // Get the next num_arg arguments
-                            auto count = arg_it->num_args();
-                            while (count != 0)
-                            {
-                                // Get the next arg
-                                it++;
-                                // check each is not another flag or we havent hit the end
-                                if (it == command_line_args.end() || validate::is_optional(*it))
-                                {
-                                    std::stringstream ss;
-                                    ss << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more input(s) (" << arg_it->num_args() << " total)." << std::endl;
-                                    print_error_usage_and_exit(ss.str());
-                                }
-                                else
-                                {
-                                    arg_it->value(*it);
-                                }
-                                --count;
-                            }
-                        }
-                        else
-                        {
-                            arg_it->value(true);
-                        }
-                    }
-                }
-                else
-                {
-                    // Verify we have enough positional arguments
-                    if (pos_index >= m_positional_arguments.size())
-                    {
-                        std::stringstream ss;
-                        ss << "Error: Too many positional arguments." << std::endl;
-                        print_error_usage_and_exit(ss.str());
-                    }
-                    // Consume the required number of arguments
-                    // Get the next num_arg arguments
-                    argument& pos_arg = m_positional_arguments[pos_index];
-                    switch (pos_arg.num_args_mode())
-                    {
-                        case NargsMode::Integer:
-                            consume_n_args(pos_arg, command_line_args, it);
-                            break;
-                        case NargsMode::All:
-                            consume_all_args(pos_arg, command_line_args, it);
-                            break;
-                        case NargsMode::AtLeastOne:
-                            consume_at_least_one_arg(pos_arg, command_line_args, it);
-                            break;
-                        case NargsMode::Single:
-                            consume_single_arg(pos_arg, command_line_args, it);
-                            break;
-                    }
-                    pos_index++;
-                }
-            }
-
-            // Now we need to check that all positional arguments have been filled
             std::vector<std::string> missing_arguments;
             for (const auto& pos_arg : m_positional_arguments)
             {
@@ -727,21 +714,91 @@ namespace argparse
             }
         }
 
-    private:
-        argument& add_argument(argument arg)
+        void process_optional_command_line_argument(const std::vector<std::string>& command_line_args, std::vector<std::string>::iterator& it)
         {
-            if (arg.is_optional())
+            // If asked for help then print usage and help and exit
+            if (get_help_argument().matches_arg_name(*it))
             {
-                m_optional_arguments.push_back(arg);
-                return m_optional_arguments.back();
+                std::cout << get_usage_and_help_string();
+                std::exit(0);
             }
-            m_positional_arguments.push_back(arg);
-            return m_positional_arguments.back();
+            // Search optional args for the name, increment the iterator and grab the value
+            // if the next value is another optional flag (i.e. no value has been specified)
+            // and nargs is > 0 then ERROR
+            auto arg_it = std::find_if(
+                    m_optional_arguments.begin(),
+                    m_optional_arguments.end(),
+                    [&it](const argument& arg)
+                    {
+                        return arg.matches_arg_name(*it);
+                    }
+            );
+            if (arg_it == m_optional_arguments.end())
+            {
+                std::stringstream ss;
+                ss << "Error: Unknown optional argument. " << *it << std::endl;
+                print_error_usage_and_exit(ss.str());
+            }
+            else
+            {
+                // Get the number of args meant to be consumed
+                if (arg_it->num_args() > 0)
+                {
+                    // Get the next num_arg arguments
+                    auto count = arg_it->num_args();
+                    while (count != 0)
+                    {
+                        // Get the next arg
+                        it++;
+                        // check each is not another flag or we havent hit the end
+                        if (it == command_line_args.end() || validate::is_optional(*it))
+                        {
+                            std::stringstream ss;
+                            ss << "Error: Insufficient optional arguments. " << arg_it->dest() << " expected " << count << " more input(s) (" << arg_it->num_args() << " total)." << std::endl;
+                            print_error_usage_and_exit(ss.str());
+                        }
+                        else
+                        {
+                            arg_it->value(*it);
+                        }
+                        --count;
+                    }
+                }
+                else
+                {
+                    arg_it->value(true);
+                }
+            }
         }
 
-        argument& get_help_argument()
+        void process_positional_command_line_argument(size_t& pos_arg_index, std::vector<std::string>& command_line_args, std::vector<std::string>::iterator& current_arg)
         {
-            return m_optional_arguments[0];
+            // Verify we have enough positional arguments
+            if (pos_arg_index >= m_positional_arguments.size())
+            {
+                std::stringstream ss;
+                ss << "Error: Too many positional arguments." << std::endl;
+                print_error_usage_and_exit(ss.str());
+            }
+            // Consume the required number of arguments
+            // Get the next num_arg arguments
+            argument& pos_arg = m_positional_arguments[pos_arg_index];
+            switch (pos_arg.num_args_mode())
+            {
+                case NargsMode::Integer:
+                    consume_n_args(pos_arg, command_line_args, current_arg);
+                    break;
+                case NargsMode::All:
+                    consume_all_args(pos_arg, command_line_args, current_arg);
+                    break;
+                case NargsMode::AtLeastOne:
+                    consume_at_least_one_arg(pos_arg, command_line_args, current_arg);
+                    break;
+                case NargsMode::Single:
+                    consume_single_arg(pos_arg, command_line_args, current_arg);
+                    break;
+            }
+            pos_arg_index++;
         }
 
         std::string get_usage_string() const
@@ -836,11 +893,14 @@ namespace argparse
             std::exit(1);
         }
 
-        private:
+    private:
         std::string m_program_name;
         std::string m_description;
         std::vector<argument> m_positional_arguments;
         std::vector<argument> m_optional_arguments;
+        bool m_config_file_mode;
+        bool m_environment_mode;
+        std::string m_environment_prefix;
     };
 }
 
