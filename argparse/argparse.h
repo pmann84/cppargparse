@@ -12,6 +12,8 @@
 #include <sstream>
 #include <functional>
 #include <filesystem>
+#include <map>
+#include <fstream>
 
 namespace argparse
 {
@@ -51,7 +53,7 @@ namespace argparse
         {
             if (split_string.empty()) return std::basic_string<CharT>();
             if (split_string.size() == 1) return split_string[0];
-            typename std::vector<std::basic_string<CharT>>::const_iterator it = split_string.begin();
+            auto it = split_string.begin();
             std::basic_string<CharT> joined_string = *it++;
             for (; it != split_string.end(); ++it)
             {
@@ -105,17 +107,17 @@ namespace argparse
 
     namespace exceptions
     {
-        class unknown_argument : public std::exception
+        class invalid_config_file_contents : public std::exception
         {
         public:
-            explicit unknown_argument(const std::string& unknown_argument_name)
+            explicit invalid_config_file_contents(const std::string& config_value)
             {
                 std::stringstream error_msg;
-                error_msg << "Error: Attempt to Access Unknown Argument: " << unknown_argument_name << std::endl;
+                error_msg << "Error: Config file has invalid format " << config_value << std::endl;
                 m_error_message = error_msg.str();
             }
 
-            virtual char const* what() const noexcept
+            [[nodiscard]] char const* what() const noexcept override
             {
                 return m_error_message.c_str();
             }
@@ -123,17 +125,53 @@ namespace argparse
             std::string m_error_message;
         };
 
-        class invalid_narg_mode : public std::exception
+        class config_file_does_not_exist_exception : public std::exception
         {
         public:
-            explicit invalid_narg_mode(const std::string& narg_mode)
+            explicit config_file_does_not_exist_exception(const std::string& config_file_path)
+            {
+                std::stringstream error_msg;
+                error_msg << "Error: Config file " << config_file_path << " does not exist" << std::endl;
+                m_error_message = error_msg.str();
+            }
+
+            [[nodiscard]] char const* what() const noexcept override
+            {
+                return m_error_message.c_str();
+            }
+        private:
+            std::string m_error_message;
+        };
+        
+        class unknown_argument_exception : public std::exception
+        {
+        public:
+            explicit unknown_argument_exception(const std::string& unknown_argument_name)
+            {
+                std::stringstream error_msg;
+                error_msg << "Error: Attempt to Access Unknown Argument: " << unknown_argument_name << std::endl;
+                m_error_message = error_msg.str();
+            }
+
+            [[nodiscard]] char const* what() const noexcept override
+            {
+                return m_error_message.c_str();
+            }
+        private:
+            std::string m_error_message;
+        };
+
+        class invalid_narg_mode_exception : public std::exception
+        {
+        public:
+            explicit invalid_narg_mode_exception(const std::string& narg_mode)
             {
                 std::stringstream error_msg;
                 error_msg << "Error: Invalid NARGs specification: " << narg_mode << std::endl;
                 m_error_message = error_msg.str();
             }
 
-            virtual char const* what() const noexcept
+            [[nodiscard]] char const* what() const noexcept override
             {
                 return m_error_message.c_str();
             }
@@ -192,6 +230,14 @@ namespace argparse
         static constexpr bool is_container_value = is_container<T>::value;
     }
 
+    namespace constants
+    {
+        const std::string HELP_FLAG = "--help";
+        const std::string HELP_SHORT_FLAG = "-h";
+        const std::string CONFIG_FILE_FLAG = "--configFile";
+        const std::string CONFIG_FILE_SHORT_FLAG = "-c";
+    }
+
     enum class NargsMode
     {
         Integer, // N - consumes N arguments into a list
@@ -200,18 +246,27 @@ namespace argparse
         AtLeastOne, // + - (like *) all args are gathered into a list. Error message generated if there wasn't at least one arg present
     };
 
-    // Set of classes to read config files
-    class i_config_file_reader
+    // For now we just support : or = delimited values (non nested) with each on a separate line
+    class config_file_reader
     {
     public:
-
-    };
-
-    // Expand support to include json, xml
-    // For now we just support : delimited values with each on a separate line
-    class config_file_reader : public i_config_file_reader
-    {
-
+        std::map<std::string, std::string> read_args(const std::string& filename)
+        {
+            std::map<std::string, std::string> config;
+            std::ifstream infile(filename);
+            std::string line;
+            while (std::getline(infile, line))
+            {
+                std::cout << "[DEBUG] Config line: " << line << std::endl;
+                auto line_split_by_equals = string_utils::split(line, std::string("="));
+                if (line_split_by_equals.size() != 2)
+                {
+                    throw exceptions::invalid_config_file_contents(line);
+                }
+                config[line_split_by_equals[0]] = line_split_by_equals[1];
+            }
+            return config;
+        }
     };
 
     class argument
@@ -242,6 +297,7 @@ namespace argparse
         template<typename ArgT>
         void value(ArgT value)
         {
+            std::cout << "[DEBUG] Attempting to add " << value << " to argument " << get_name_string() << std::endl;
             if (m_nargs_mode == NargsMode::All || m_values.size() < m_nargs)
             {
                 m_values.push_back(value);
@@ -324,7 +380,7 @@ namespace argparse
             }
             else
             {
-                throw exceptions::invalid_narg_mode(n);
+                throw exceptions::invalid_narg_mode_exception(n);
             }
             return *this;
         }
@@ -376,6 +432,7 @@ namespace argparse
             return validate::is_optional(m_flags[0]);
         }
 
+        // TODO: Implement this to simplify the usage string output
 //        friend std::ostream &operator<<(std::ostream &os, const argument &arg);
 
         std::string get_name_string() const
@@ -443,7 +500,7 @@ namespace argparse
                 , m_description(std::move(description))
                 , m_config_file_mode(false)
         {
-            add_argument({"-h", "--help"})
+            add_argument({constants::HELP_SHORT_FLAG, constants::HELP_FLAG})
                     .num_args(0)
                     .help("Show this help message and exit.");
         }
@@ -468,23 +525,23 @@ namespace argparse
         argument_parser& enable_config_file()
         {
             m_config_file_mode = true;
-            add_argument({"-c", "--configFile"})
+            add_argument({constants::CONFIG_FILE_SHORT_FLAG, constants::CONFIG_FILE_FLAG})
                     .num_args(1)
                     .help("Read in arguments from the specified config file.");
             return *this;
         }
 
-        argument_parser& enable_environment_config(const std::string& prefix)
-        {
-            m_environment_mode = true;
-            m_environment_prefix = prefix;
-            return *this;
-        }
+//        argument_parser& enable_environment_config(const std::string& prefix)
+//        {
+//            m_environment_mode = true;
+//            m_environment_prefix = prefix;
+//            return *this;
+//        }
 
-        argument_parser& enable_environment_config()
-        {
-            return enable_environment_config("APP_ENV_");
-        }
+//        argument_parser& enable_environment_config()
+//        {
+//            return enable_environment_config("APP_ENV_");
+//        }
 
         argument& add_argument(const std::initializer_list<std::string> names)
         {
@@ -527,14 +584,42 @@ namespace argparse
             {
                 return opt_it->get<ArgT>();
             }
-            throw exceptions::unknown_argument(name);
+            throw exceptions::unknown_argument_exception(name);
         }
 
         void parse_args(int argc, char *argv[])
         {
-            // Get the input from the command line
             std::vector<std::string> command_line_args;
+            // Always get command line input
             std::copy(argv, argv + argc, std::back_inserter(command_line_args));
+
+            if (m_config_file_mode)
+            {
+                // Get the path to the config file flag
+                auto configFileEntry = std::find_if(
+                        command_line_args.begin(),
+                        command_line_args.end(),
+                        [](const std::string& arg)
+                        {
+                            return arg == constants::CONFIG_FILE_SHORT_FLAG || arg == constants::CONFIG_FILE_FLAG;
+                        }
+                    );
+                // Check if config file hasn't been specified
+                if (configFileEntry == command_line_args.end() || command_line_args.size() < 3)
+                {
+                    print_error_usage_and_exit("Config file not specified.");
+                }
+                // Check if file exists
+                auto configFileValue = *(configFileEntry + 1);
+                std::cout << "[DEBUG] Config File location: " << configFileValue << std::endl;
+
+                if (!std::filesystem::exists(configFileValue))
+                {
+                    throw exceptions::config_file_does_not_exist_exception(configFileValue);
+                }
+                // Store the config file location in argument
+                process_optional_command_line_argument(command_line_args, configFileEntry);
+            }
 
             // Get values from environment
 //            std::string getEnvVar( std::string const & key ) const
@@ -542,12 +627,27 @@ namespace argparse
 //                char * val = getenv( key.c_str() );
 //                return val == NULL ? std::string("") : std::string(val);
 //            }
-            // Get values from config file
 
             // Check if we have a name, if not, then take it from the arguments list
             if (m_program_name.empty() && !command_line_args.empty())
             {
                 m_program_name = std::filesystem::path(command_line_args.front()).filename().string();
+            }
+
+            if (m_config_file_mode)
+            {
+                // Get values from config file
+                auto& config_arg = get_optional_argument_by_name("configFile");
+                config_file_reader reader;
+                auto config_results = reader.read_args(config_arg.get<std::string>());
+                for (auto& entry : config_results)
+                {
+                    std::cout << "Name: " << entry.first << ", Value: " << entry.second << std::endl;
+                    // TODO: Map these into the commandline args vector so we can hand them off to be processed like below
+                }
+                // Overwrite the command_line_args with the values from the config
+                command_line_args.clear();
+                command_line_args.push_back(m_program_name);
             }
 
             // Iterate over the given arguments
@@ -558,8 +658,7 @@ namespace argparse
                 if (validate::is_optional(*it))
                 {
                     process_optional_command_line_argument(command_line_args, it);
-                }
-                else
+                } else
                 {
                     process_positional_command_line_argument(pos_index, command_line_args, it);
                 }
@@ -691,6 +790,29 @@ namespace argparse
             }
         }
 
+        argument& get_optional_argument_by_name(const std::string& name)
+        {
+            auto arg_it = std::find_if(
+                    m_optional_arguments.begin(),
+                    m_optional_arguments.end(),
+                    [&name](const argument& arg)
+                    {
+                        return arg.matches_arg_name(name);
+                    });
+            return *arg_it;
+        }
+
+        argument& get_positional_argument_by_name(const std::string& name)
+        {
+            auto arg_it = std::find_if(
+                    m_positional_arguments.begin(),
+                    m_positional_arguments.end(),
+                    [&name](const argument& arg)
+                    {
+                        return arg.matches_arg_name(name);
+                    });
+            return *arg_it;
+        }
         void check_for_missing_arguments()
         {
             std::vector<std::string> missing_arguments;
@@ -714,7 +836,7 @@ namespace argparse
             }
         }
 
-        void process_optional_command_line_argument(const std::vector<std::string>& command_line_args, std::vector<std::string>::iterator& it)
+        argument& process_optional_command_line_argument(const std::vector<std::string>& command_line_args, std::vector<std::string>::iterator& it)
         {
             // If asked for help then print usage and help and exit
             if (get_help_argument().matches_arg_name(*it))
@@ -750,7 +872,7 @@ namespace argparse
                     {
                         // Get the next arg
                         it++;
-                        // check each is not another flag or we havent hit the end
+                        // check each is not another flag or we haven't hit the end
                         if (it == command_line_args.end() || validate::is_optional(*it))
                         {
                             std::stringstream ss;
@@ -768,6 +890,7 @@ namespace argparse
                 {
                     arg_it->value(true);
                 }
+                return *arg_it;
             }
         }
 
@@ -803,6 +926,7 @@ namespace argparse
 
         std::string get_usage_string() const
         {
+            // TODO: Alter this if we are in config file mode
             // Optional arguments are surrounded by [], with the name being the longest flag available
             // Positional arguments are printed as the dest name
             std::stringstream ss;
@@ -899,8 +1023,8 @@ namespace argparse
         std::vector<argument> m_positional_arguments;
         std::vector<argument> m_optional_arguments;
         bool m_config_file_mode;
-        bool m_environment_mode;
-        std::string m_environment_prefix;
+//        bool m_environment_mode;
+//        std::string m_environment_prefix;
     };
 }
 

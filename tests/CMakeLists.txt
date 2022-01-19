@@ -13,3 +13,7 @@ target_link_libraries(test_argparse PUBLIC gtest_main)
 target_link_libraries(test_argparse PUBLIC gmock)
 target_link_libraries(test_argparse PUBLIC gmock_main)
 target_link_libraries(test_argparse PUBLIC gtest)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_config_files $<TARGET_FILE_DIR:test_argparse>/test_config_files)
