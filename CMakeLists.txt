@@ -13,7 +13,9 @@ set(CMAKE_SUPPRESS_REGENERATION true)
 
 #set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Od")
 
+add_library(argparse INTERFACE)
+target_include_directories(argparse INTERFACE argparse/)
+
 add_subdirectory(vendor)
-add_subdirectory(argparse)
 add_subdirectory(tests)
 add_subdirectory(examples)

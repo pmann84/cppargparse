@@ -15,7 +15,7 @@ void setup_multiarg_example(argparse::argument_parser& parser)
 
 void setup_config_file_example(argparse::argument_parser& parser)
 {
-    parser.enable_config_file();
+    parser.set_config_filename("app_config.cfg");
     parser.add_argument("foo").help("foo argument help.");
     parser.add_argument("bar").num_args(3).help("bar argument help.");
 }
