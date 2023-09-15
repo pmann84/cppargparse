@@ -520,12 +520,12 @@ namespace argparse
 
             if (pos_it != m_positional_arguments.end())
             {
-                return pos_it->get<ArgT>();
+                return pos_it-> template get<ArgT>();
             }
 
             if (opt_it != m_optional_arguments.end())
             {
-                return opt_it->get<ArgT>();
+                return opt_it->template get<ArgT>();
             }
             throw exceptions::unknown_argument(name);
         }
