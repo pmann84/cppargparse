@@ -171,7 +171,7 @@ namespace argparse
 
     namespace utils
     {
-        // Primary template that supports types that arent containers
+        // Primary template that supports types that aren't containers
         template<typename T, typename = void>
         struct is_container : std::false_type {};
 
@@ -530,6 +530,21 @@ namespace argparse
             throw exceptions::unknown_argument(name);
         }
 
+        template <typename ArgT>
+        bool try_get(const std::string& name, ArgT& result)
+        {
+            try
+            {
+                const auto argValue = get<ArgT>(name);
+                result = argValue;
+                return true;
+            }
+            catch (std::runtime_error& e)
+            {
+                return false;
+            }
+        }
+
         void parse_args(int argc, char *argv[])
         {
             // Get the input from the command line
@@ -554,7 +569,7 @@ namespace argparse
             size_t pos_index = 0;
             for (auto it = command_line_args.begin() + 1; it < command_line_args.end(); ++it)
             {
-                // Check if its positional or not
+                // Check if it's positional or not
                 if (validate::is_optional(*it))
                 {
                     process_optional_command_line_argument(command_line_args, it);
@@ -595,7 +610,7 @@ namespace argparse
             auto count = arg.num_args();
             while (count != 0)
             {
-                // check each arg is not another flag or we've reached the end (not enough args)
+                // check each arg is not another flag, or we've reached the end (not enough args)
                 if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
                 {
                     std::stringstream ss;
@@ -607,7 +622,7 @@ namespace argparse
                     // Grab the value and stick it in the next positional argument
                     arg.value(*current_arg);
                 }
-                // Advance to the next arg unless its the last one
+                // Advance to the next arg unless it's the last one
                 if (count > 1)
                 {
                     ++current_arg;
@@ -647,7 +662,7 @@ namespace argparse
         {
             // AtLeastOne - + - (like *) all args are gathered into a list. Error message generated if there wasn't at least one arg present
 
-            // check each arg is not another flag or we've reached the end (not enough args)
+            // check each arg is not another flag, or we've reached the end (not enough args)
             if (current_arg == command_line_args.end() || validate::is_optional(*current_arg))
             {
                 std::stringstream ss;
@@ -750,7 +765,7 @@ namespace argparse
                     {
                         // Get the next arg
                         it++;
-                        // check each is not another flag or we havent hit the end
+                        // check each is not another flag, or we haven't hit the end
                         if (it == command_line_args.end() || validate::is_optional(*it))
                         {
                             std::stringstream ss;
@@ -898,8 +913,8 @@ namespace argparse
         std::string m_description;
         std::vector<argument> m_positional_arguments;
         std::vector<argument> m_optional_arguments;
-        bool m_config_file_mode;
-        bool m_environment_mode;
+        [[maybe_unused]] bool m_config_file_mode;
+        [[maybe_unused]] bool m_environment_mode;
         std::string m_environment_prefix;
     };
 }

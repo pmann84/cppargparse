@@ -123,3 +123,32 @@ TEST_F(BasicTests, TestMixedNameArgumentsThrowError)
     auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
     ASSERT_ANY_THROW(parser.add_argument({"foo", "-f"}));
 }
+
+TEST_F(BasicTests, TestTryGetWhenOptionalArgumentEntered)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument({"--foo", "-f"}).help("Optional Foo argument.");
+
+    std::vector<char*> argv = {"DummyApp.exe", "--foo", "FOO"};
+    parser.parse_args(argv.size(), &argv[0]);
+
+    std::string fooStr;
+    auto success = parser.try_get<std::string>("foo", fooStr);
+
+    ASSERT_TRUE(success);
+    ASSERT_EQ(fooStr, argv[2]);
+}
+
+TEST_F(BasicTests, TestTryGetWhenOptionalArgumentNotEntered)
+{
+    auto parser = argparse::argument_parser("MyParser", "Commandline options for my application!");
+    parser.add_argument({"--foo", "-f"}).help("Optional Foo argument.");
+
+    std::vector<char*> argv = {"DummyApp.exe"};
+    parser.parse_args(argv.size(), &argv[0]);
+
+    std::string fooStr;
+    auto success = parser.try_get<std::string>("foo", fooStr);
+
+    ASSERT_FALSE(success);
+}
