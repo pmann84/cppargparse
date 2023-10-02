@@ -913,8 +913,8 @@ namespace argparse
         std::string m_description;
         std::vector<argument> m_positional_arguments;
         std::vector<argument> m_optional_arguments;
-        [[maybe_unused]] bool m_config_file_mode;
-        [[maybe_unused]] bool m_environment_mode;
+        bool m_config_file_mode;
+        bool m_environment_mode;
         std::string m_environment_prefix;
     };
 }

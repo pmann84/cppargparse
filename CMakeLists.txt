@@ -12,7 +12,12 @@ set(CMAKE_SUPPRESS_REGENERATION true)
 
 #set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Od")
 
-add_subdirectory(vendor)
+option(CPPARGPARSE_ENABLE_TESTS "Set to ON to enable the CPPARGPARSE tests" OFF)
+
 add_subdirectory(argparse)
-add_subdirectory(tests)
 add_subdirectory(examples)
+
+if (CPPARGPARSE_ENABLE_TESTS)
+    add_subdirectory(vendor)
+    add_subdirectory(tests)
+endif ()
