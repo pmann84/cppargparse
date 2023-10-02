@@ -15,9 +15,9 @@ set(CMAKE_SUPPRESS_REGENERATION true)
 option(CPPARGPARSE_ENABLE_TESTS "Set to ON to enable the CPPARGPARSE tests" OFF)
 
 add_subdirectory(argparse)
-add_subdirectory(examples)
 
 if (CPPARGPARSE_ENABLE_TESTS)
+    add_subdirectory(examples)
     add_subdirectory(vendor)
     add_subdirectory(tests)
 endif ()
